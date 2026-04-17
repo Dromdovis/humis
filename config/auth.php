@@ -62,7 +62,7 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => App\Models\Employee::class, // Naudojame Employee vietoj User
+            'model' => App\Models\User::class,
         ],
     ],
 

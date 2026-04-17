@@ -3,24 +3,20 @@
 namespace App\Services;
 
 use App\Models\Employee;
-use App\Models\Skill;
+use App\Models\Project;
 use App\Models\Vacation;
 use Illuminate\Support\Collection;
 
 class RecommendationService
 {
     /**
-     * ClickUp užduočių skaičiai kiekvienam darbuotojui (pagal clickup_user_id)
-     * Užpildoma iš išorės prieš skaičiuojant rekomendacijas
+     * ClickUp darbo krūvis valandomis kiekvienam darbuotojui (pagal clickup_user_id)
      */
-    private array $clickupTaskCounts = [];
+    private array $clickupWorkloadHours = [];
 
-    /**
-     * Nustatyti ClickUp užduočių skaičius
-     */
-    public function setClickupTaskCounts(array $counts): void
+    public function setClickupWorkloadHours(array $hours): void
     {
-        $this->clickupTaskCounts = $counts;
+        $this->clickupWorkloadHours = $hours;
     }
 
     /**
@@ -43,20 +39,33 @@ class RecommendationService
             ->with('skills')
             ->get();
 
-        $taskTags = collect($task['tags'] ?? [])->pluck('name')->map(fn($t) => strtolower($t));
-        $taskListName = strtolower($task['list']['name'] ?? '');
-        $taskFolderName = strtolower($task['folder']['name'] ?? '');
+        $taskListId = data_get($task, 'list.id', '');
+        $taskFolderId = data_get($task, 'folder.id', '');
+        $taskSpaceId = data_get($task, 'space.id', '');
+        $taskListName = strtolower(data_get($task, 'list.name', ''));
+        $taskFolderName = strtolower(data_get($task, 'folder.name', ''));
 
-        $allSkills = Skill::all();
+        $taskProject = null;
+        if ($taskListId) {
+            $taskProject = Project::where('clickup_list_id', $taskListId)->first();
+        }
+        if (!$taskProject && $taskFolderId) {
+            $taskProject = Project::where('clickup_folder_id', $taskFolderId)->first();
+        }
+        if (!$taskProject && $taskSpaceId) {
+            $taskProject = Project::where('clickup_space_id', $taskSpaceId)->first();
+        }
+
+        $projectSkills = $taskProject ? $taskProject->skills()->withPivot('required_level', 'is_primary')->get() : collect();
 
         return $employees->map(function ($employee) use (
-            $task, $taskTags, $taskListName, $taskFolderName, $allSkills, $vacationStart, $vacationEnd
+            $task, $taskProject, $projectSkills, $taskListName, $taskFolderName, $vacationStart, $vacationEnd
         ) {
             $scores = [];
             $details = [];
 
             // 1. ĮGŪDŽIŲ ATITIKIMAS (max 40 taškų)
-            $skillScore = $this->calculateSkillScore($employee, $taskTags, $taskListName, $taskFolderName, $allSkills);
+            $skillScore = $this->calculateSkillScore($employee, $projectSkills);
             $scores['skills'] = $skillScore['score'];
             $details['skills'] = $skillScore['details'];
 
@@ -71,7 +80,7 @@ class RecommendationService
             $details['availability'] = $availabilityScore['details'];
 
             // 4. PATIRTIS SU PROJEKTU (max 10 taškų)
-            $projectScore = $this->calculateProjectScore($employee, $taskListName, $taskFolderName);
+            $projectScore = $this->calculateProjectScore($employee, $taskProject, $taskListName, $taskFolderName);
             $scores['project'] = $projectScore['score'];
             $details['project'] = $projectScore['details'];
 
@@ -89,122 +98,100 @@ class RecommendationService
     }
 
     /**
-     * Įgūdžių atitikimo skaičiavimas
+     * Įgūdžių atitikimo skaičiavimas pagal projekto reikalaujamus skills
      */
-    private function calculateSkillScore(
-        Employee $employee,
-        Collection $taskTags,
-        string $taskListName,
-        string $taskFolderName,
-        Collection $allSkills
-    ): array {
+    private function calculateSkillScore(Employee $employee, Collection $projectSkills): array
+    {
         $maxScore = 40;
-        $score = 0;
-        $matchedSkills = [];
 
-        $employeeSkills = $employee->skills->mapWithKeys(function ($skill) {
-            return [strtolower($skill->name) => $skill->pivot->level];
+        $employeeSkills = $employee->skills->keyBy('id')->mapWithKeys(function ($skill) {
+            return [$skill->id => $skill->pivot->level];
         });
 
         if ($employeeSkills->isEmpty()) {
+            return ['score' => round($maxScore * 0.3), 'details' => 'Įgūdžiai nenurodyti'];
+        }
+
+        if ($projectSkills->isEmpty()) {
+            $avgLevel = $employeeSkills->avg() ?? 0;
             return [
-                'score' => $maxScore * 0.3, // Bazinis balas jei nėra įgūdžių
-                'details' => 'Įgūdžiai nenurodyti'
+                'score' => round(($avgLevel / 5) * ($maxScore * 0.5)),
+                'details' => 'Projektas neturi reikalaujamų įgūdžių — vertinamas vidurkis: ' . round($avgLevel, 1)
             ];
         }
 
-        $keywords = $taskTags->merge([$taskListName, $taskFolderName])
-            ->filter()
-            ->unique();
+        $totalWeight = 0;
+        $weightedScore = 0;
+        $matchedSkills = [];
 
-        foreach ($allSkills as $skill) {
-            $skillNameLower = strtolower($skill->name);
-            
-            foreach ($keywords as $keyword) {
-                if (str_contains($keyword, $skillNameLower) || str_contains($skillNameLower, $keyword)) {
-                    if ($employeeSkills->has($skillNameLower)) {
-                        $level = $employeeSkills->get($skillNameLower);
-                        $skillPoints = ($level / 5) * 10; // Max 10 taškų per skill
-                        $score += $skillPoints;
-                        $matchedSkills[] = "{$skill->name} (Lv.{$level})";
-                    }
-                    break;
-                }
+        foreach ($projectSkills as $projSkill) {
+            $requiredLevel = $projSkill->pivot->required_level ?: 3;
+            $isPrimary = $projSkill->pivot->is_primary;
+            $weight = $isPrimary ? 2 : 1;
+            $totalWeight += $weight;
+
+            if ($employeeSkills->has($projSkill->id)) {
+                $empLevel = $employeeSkills->get($projSkill->id);
+                $ratio = min(1, $empLevel / $requiredLevel);
+                $weightedScore += $ratio * $weight;
+                $matchedSkills[] = "{$projSkill->name} ({$empLevel}/{$requiredLevel})";
             }
         }
 
-        // Jei nerasta tiesioginio atitikimo, duoti bazinius taškus pagal bendrą skill lygį
-        if (empty($matchedSkills)) {
-            $avgLevel = $employeeSkills->avg() ?? 0;
-            $score = ($avgLevel / 5) * ($maxScore * 0.5);
-            return [
-                'score' => round($score),
-                'details' => 'Bendras įgūdžių vidurkis: ' . round($avgLevel, 1)
-            ];
+        if ($totalWeight === 0) {
+            return ['score' => round($maxScore * 0.5), 'details' => 'Nėra svorių'];
         }
 
-        $score = min($maxScore, $score);
+        $score = round(($weightedScore / $totalWeight) * $maxScore);
+
+        if (empty($matchedSkills)) {
+            return ['score' => 0, 'details' => 'Neturi reikalaujamų įgūdžių'];
+        }
 
         return [
-            'score' => round($score),
+            'score' => min($maxScore, $score),
             'details' => 'Atitinka: ' . implode(', ', array_slice($matchedSkills, 0, 3))
         ];
     }
 
     /**
-     * Užimtumo skaičiavimas - mažiau užduočių = didesnis balas
-     * Naudoja REALIAS ClickUp užduotis + lokalius pavaduojamus task'us
+     * Užimtumo skaičiavimas pagal bendrą darbo valandų krūvį
      */
     private function calculateWorkloadScore(Employee $employee): array
     {
         $maxScore = 30;
 
-        // 1. ClickUp realios užduotys (jei turime duomenis)
-        $clickupTasks = 0;
-        if ($employee->clickup_user_id && isset($this->clickupTaskCounts[$employee->clickup_user_id])) {
-            $clickupTasks = $this->clickupTaskCounts[$employee->clickup_user_id];
+        $clickupHours = 0;
+        if ($employee->clickup_user_id && isset($this->clickupWorkloadHours[$employee->clickup_user_id])) {
+            $clickupHours = $this->clickupWorkloadHours[$employee->clickup_user_id];
         }
 
-        // 2. Lokalūs pavaduojimai (iš mūsų sistemos)
-        $substitutingTasks = $employee->taskAssignments()
+        $substitutingHours = $employee->taskAssignments()
             ->whereHas('vacation', function ($q) {
                 $q->where('tasks_reassigned', false)
                   ->where('end_date', '>=', now());
             })
-            ->count();
+            ->sum('time_estimate_hours') ?? 0;
 
-        $totalTasks = $clickupTasks + $substitutingTasks;
+        $totalHours = $clickupHours + $substitutingHours;
 
-        if ($totalTasks === 0) {
-            return [
-                'score' => $maxScore,
-                'details' => 'Laisvas (0 užduočių)'
-            ];
-        } elseif ($totalTasks <= 2) {
-            return [
-                'score' => round($maxScore * 0.85),
-                'details' => "Mažai užimtas ({$totalTasks} užd.)"
-            ];
-        } elseif ($totalTasks <= 4) {
-            return [
-                'score' => round($maxScore * 0.7),
-                'details' => "Vidutiniškai užimtas ({$totalTasks} užd.)"
-            ];
-        } elseif ($totalTasks <= 6) {
-            return [
-                'score' => round($maxScore * 0.5),
-                'details' => "Užimtas ({$totalTasks} užd.)"
-            ];
-        } elseif ($totalTasks <= 10) {
-            return [
-                'score' => round($maxScore * 0.3),
-                'details' => "Labai užimtas ({$totalTasks} užd.)"
-            ];
+        if ($totalHours == 0) {
+            return ['score' => $maxScore, 'details' => 'Laisvas (0h krūvis)'];
+        } elseif ($totalHours <= 20) {
+            $score = round($maxScore * 0.85);
+            return ['score' => $score, 'details' => "Mažas krūvis ({$totalHours}h)"];
+        } elseif ($totalHours <= 40) {
+            $score = round($maxScore * 0.7);
+            return ['score' => $score, 'details' => "Vidutinis krūvis ({$totalHours}h)"];
+        } elseif ($totalHours <= 60) {
+            $score = round($maxScore * 0.5);
+            return ['score' => $score, 'details' => "Didelis krūvis ({$totalHours}h)"];
+        } elseif ($totalHours <= 80) {
+            $score = round($maxScore * 0.3);
+            return ['score' => $score, 'details' => "Labai didelis krūvis ({$totalHours}h)"];
         } else {
-            return [
-                'score' => round($maxScore * 0.1),
-                'details' => "Perkrautas ({$totalTasks} užd.)"
-            ];
+            $score = round($maxScore * 0.1);
+            return ['score' => $score, 'details' => "Perkrautas ({$totalHours}h)"];
         }
     }
 
@@ -253,48 +240,45 @@ class RecommendationService
     }
 
     /**
-     * Projekto patirties skaičiavimas
+     * Projekto patirties skaičiavimas per tiesioginį DB ryšį
      */
     private function calculateProjectScore(
         Employee $employee,
+        ?Project $taskProject,
         string $taskListName,
         string $taskFolderName
     ): array {
         $maxScore = 10;
 
-        $matchingProject = $employee->projects()
-            ->where(function ($query) use ($taskListName, $taskFolderName) {
-                $query->whereRaw('LOWER(name) LIKE ?', ["%{$taskListName}%"])
-                    ->orWhereRaw('LOWER(name) LIKE ?', ["%{$taskFolderName}%"]);
-            })
-            ->first();
-
-        if ($matchingProject) {
-            return [
-                'score' => $maxScore,
-                'details' => 'Dirba projekte: ' . $matchingProject->name
-            ];
+        if ($taskProject) {
+            $isProjectMember = $employee->projects()->where('projects.id', $taskProject->id)->exists();
+            if ($isProjectMember) {
+                return [
+                    'score' => $maxScore,
+                    'details' => 'Komandos narys: ' . $taskProject->name
+                ];
+            }
         }
 
-        // Duoti dalinį balą jei anksčiau buvo priskirtas panašioms užduotims
         $previousAssignment = $employee->taskAssignments()
             ->where(function ($query) use ($taskListName, $taskFolderName) {
-                $query->whereRaw('LOWER(task_name) LIKE ?', ["%{$taskListName}%"])
-                    ->orWhereRaw('LOWER(task_name) LIKE ?', ["%{$taskFolderName}%"]);
+                if ($taskListName) {
+                    $query->whereRaw('LOWER(task_name) LIKE ?', ["%{$taskListName}%"]);
+                }
+                if ($taskFolderName) {
+                    $query->orWhereRaw('LOWER(task_name) LIKE ?', ["%{$taskFolderName}%"]);
+                }
             })
             ->exists();
 
         if ($previousAssignment) {
             return [
-                'score' => $maxScore * 0.5,
+                'score' => round($maxScore * 0.5),
                 'details' => 'Turėjo panašių užduočių'
             ];
         }
 
-        return [
-            'score' => 0,
-            'details' => 'Naujas projektas'
-        ];
+        return ['score' => 0, 'details' => 'Naujas projektas'];
     }
 
     /**

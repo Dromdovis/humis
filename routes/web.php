@@ -1,12 +1,11 @@
 <?php
 
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SkillController;
-use App\Http\Controllers\SyncController;
 use App\Http\Controllers\VacationController;
 use Illuminate\Support\Facades\Route;
 
@@ -15,19 +14,20 @@ use Illuminate\Support\Facades\Route;
 // ═══════════════════════════════════════════════════════════════════════════
 Route::get('/prisijungti', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/prisijungti', [AuthController::class, 'login']);
-Route::post('/registruotis', [AuthController::class, 'register'])->name('register');
-Route::post('/tikrinti-el-pasta', [AuthController::class, 'checkEmail'])->name('check-email');
 Route::post('/atsijungti', [AuthController::class, 'logout'])->name('logout');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Apsaugotos routes (reikia prisijungti)
 // ═══════════════════════════════════════════════════════════════════════════
 Route::middleware('auth')->group(function () {
-    // Dashboard (Pradžia)
-    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    // Pagrindinis puslapis nukreipia į atostogas
+    Route::get('/', function () {
+        return redirect()->route('vacations.index');
+    })->name('dashboard');
 
     // Darbuotojai
     Route::get('/darbuotojai', [EmployeeController::class, 'index'])->name('employees.index');
+    Route::post('/darbuotojai/sinchronizuoti', [EmployeeController::class, 'sync'])->name('employees.sync');
     Route::get('/darbuotojai/{employee}', [EmployeeController::class, 'show'])->name('employees.show');
     Route::put('/darbuotojai/{employee}/igudziai', [EmployeeController::class, 'updateSkills'])->name('employees.skills.update');
 
@@ -52,11 +52,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/igudziai', [SkillController::class, 'store'])->name('skills.store');
     Route::delete('/igudziai/{skill}', [SkillController::class, 'destroy'])->name('skills.destroy');
 
-    // Sinchronizacija
-    Route::get('/sinchronizacija', [SyncController::class, 'index'])->name('sync.index');
-    Route::post('/sinchronizacija/darbuotojai', [SyncController::class, 'employees'])->name('sync.employees');
-    Route::get('/sinchronizacija/erdves', [SyncController::class, 'spaces'])->name('sync.spaces');
-
     // Nustatymai
     Route::get('/nustatymai', [SettingsController::class, 'index'])->name('settings.index');
+    Route::post('/nustatymai', [SettingsController::class, 'update'])->name('settings.update');
+
+    // Žurnalas
+    Route::get('/zurnalas', [ActivityLogController::class, 'index'])->name('activity-log.index');
 });

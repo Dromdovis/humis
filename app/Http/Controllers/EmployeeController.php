@@ -2,20 +2,31 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Employee;
 use App\Models\Skill;
+use App\Services\ClickUpService;
 use Illuminate\Http\Request;
 
 class EmployeeController extends Controller
 {
     public function index()
     {
-        $employees = Employee::with('skills')
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        $sortBy = request('sort', 'name');
+        $sortDir = request('dir', 'asc') === 'desc' ? 'desc' : 'asc';
 
-        return view('employees.index', compact('employees'));
+        $query = Employee::with('skills')->where('is_active', true);
+
+        if ($sortBy === 'tasks') {
+            $query->orderByRaw('cached_active_tasks_count IS NULL')
+                ->orderBy('cached_active_tasks_count', $sortDir);
+        } else {
+            $query->orderBy('name', $sortDir);
+        }
+
+        $employees = $query->get();
+
+        return view('employees.index', compact('employees', 'sortBy', 'sortDir'));
     }
 
     public function show(Employee $employee)
@@ -48,5 +59,50 @@ class EmployeeController extends Controller
 
         return redirect()->route('employees.show', $employee)
             ->with('success', 'Įgūdžiai atnaujinti');
+    }
+
+    public function sync(ClickUpService $clickUpService)
+    {
+        try {
+            $teamId = config('services.clickup.team_id', env('CLICKUP_TEAM_ID'));
+            $members = $clickUpService->getTeamMembers($teamId);
+
+            if (empty($members)) {
+                return redirect()->route('employees.index')
+                    ->with('error', 'Nepavyko gauti darbuotojų iš ClickUp.');
+            }
+
+            $count = 0;
+            foreach ($members as $member) {
+                $user = $member['user'] ?? $member;
+                $clickupId = (string) $user['id'];
+
+                $employee = Employee::updateOrCreate(
+                    ['clickup_user_id' => $clickupId],
+                    [
+                        'name' => $user['username'] ?? $user['email'] ?? 'Nežinomas',
+                        'email' => $user['email'] ?? null,
+                        'role' => $member['role'] ?? $user['role'] ?? 'member',
+                        'color' => $user['color'] ?? null,
+                        'profile_picture' => $user['profilePicture'] ?? null,
+                        'is_active' => true,
+                    ]
+                );
+
+                $taskResponse = $clickUpService->getTasksByAssignee($teamId, $clickupId);
+                $activeCount = isset($taskResponse['tasks']) ? count($taskResponse['tasks']) : 0;
+                $employee->update(['cached_active_tasks_count' => $activeCount]);
+
+                $count++;
+            }
+
+            ActivityLog::log('employees_synced', "Atnaujinta {$count} darbuotojų iš ClickUp");
+
+            return redirect()->route('employees.index')
+                ->with('success', "Sėkmingai atnaujinta {$count} darbuotojų.");
+        } catch (\Exception $e) {
+            return redirect()->route('employees.index')
+                ->with('error', 'Sinchronizacijos klaida: ' . $e->getMessage());
+        }
     }
 }

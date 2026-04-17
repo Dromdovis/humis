@@ -34,6 +34,8 @@ class ProjectController extends Controller
             'clickup_list_id' => 'nullable|string',
             'skills' => 'array',
             'skills.*' => 'exists:skills,id',
+        ], [
+            'name.required' => 'Įveskite projekto pavadinimą.',
         ]);
 
         $project = Project::create([
@@ -53,7 +55,7 @@ class ProjectController extends Controller
 
     public function show(Project $project)
     {
-        $project->load(['skills', 'employees']);
+        $project->load(['skills']);
         $allSkills = Skill::orderBy('category')->orderBy('name')->get();
 
         return view('projects.show', compact('project', 'allSkills'));
@@ -68,13 +70,15 @@ class ProjectController extends Controller
             'clickup_list_id' => 'nullable|string',
             'skills' => 'array',
             'skills.*' => 'exists:skills,id',
+        ], [
+            'name.required' => 'Įveskite projekto pavadinimą.',
         ]);
 
         $project->update([
             'name' => $validated['name'],
-            'client_name' => $validated['client_name'],
-            'description' => $validated['description'],
-            'clickup_list_id' => $validated['clickup_list_id'],
+            'client_name' => $validated['client_name'] ?? null,
+            'description' => $validated['description'] ?? null,
+            'clickup_list_id' => $validated['clickup_list_id'] ?? null,
         ]);
 
         $project->skills()->sync($validated['skills'] ?? []);

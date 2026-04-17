@@ -32,6 +32,10 @@ class SkillController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:skills,name',
             'category' => 'nullable|string|max:255',
+        ], [
+            'name.required' => 'Įveskite technologijos pavadinimą.',
+            'name.max' => 'Pavadinimas per ilgas (maks. 255 simboliai).',
+            'name.unique' => 'Tokia technologija jau egzistuoja.',
         ]);
 
         Skill::create($validated);
@@ -53,6 +57,10 @@ class SkillController extends Controller
             'name' => 'required|string|max:255|unique:skills,name,' . $skill->id,
             'category' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1000',
+        ], [
+            'name.required' => 'Įveskite technologijos pavadinimą.',
+            'name.max' => 'Pavadinimas per ilgas (maks. 255 simboliai).',
+            'name.unique' => 'Tokia technologija jau egzistuoja.',
         ]);
 
         $skill->update($validated);

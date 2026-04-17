@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Humis - Žmogiškųjų resursų paskirstymo sistema')</title>
+    <title>@yield('title', 'Humis - Užduočių perskirstymo sistema')</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/light.css">
     
     <style>
         :root {
@@ -852,6 +854,35 @@
             color: var(--text-muted);
             font-size: 14px;
         }
+        .flatpickr-calendar {
+            font-family: 'Inter', sans-serif;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+            border: 1px solid var(--border-color);
+        }
+        .flatpickr-months .flatpickr-month {
+            height: 40px;
+        }
+        .flatpickr-current-month {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .flatpickr-day.selected,
+        .flatpickr-day.selected:hover {
+            background: var(--color-primary);
+            border-color: var(--color-primary);
+        }
+        .flatpickr-day.today {
+            border-color: var(--color-primary);
+        }
+        .flatpickr-day.today:hover {
+            background: var(--color-primary);
+            color: #fff;
+            border-color: var(--color-primary);
+        }
+        .flatpickr-day:hover {
+            background: #e8f5e9;
+        }
     </style>
     @stack('styles')
 </head>
@@ -859,25 +890,12 @@
     <div class="layout">
         <aside class="sidebar">
             <div class="sidebar__header">
-                <a href="{{ route('dashboard') }}" class="sidebar__logo">
-                    <span class="sidebar__logo-text">Humis</span>
+                <a href="{{ route('vacations.index') }}" class="sidebar__logo">
+                    <span class="sidebar__logo-text">Hum<span>is</span></span>
                 </a>
             </div>
 
             <nav class="sidebar__nav">
-                <div class="sidebar__section">
-                    <ul class="sidebar__menu">
-                        <li>
-                            <a href="{{ route('dashboard') }}" class="sidebar__link {{ request()->routeIs('dashboard') ? 'sidebar__link--active' : '' }}">
-                                <span class="sidebar__icon">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                                </span>
-                                <span>Pradžia</span>
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-
                 <div class="sidebar__section">
                     <div class="sidebar__section-title">Valdymas</div>
                     <ul class="sidebar__menu">
@@ -928,11 +946,11 @@
                             </a>
                         </li>
                         <li>
-                            <a href="{{ route('sync.index') }}" class="sidebar__link {{ request()->routeIs('sync.*') ? 'sidebar__link--active' : '' }}">
+                            <a href="{{ route('activity-log.index') }}" class="sidebar__link {{ request()->routeIs('activity-log.*') ? 'sidebar__link--active' : '' }}">
                                 <span class="sidebar__icon">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                                 </span>
-                                <span>Sinchronizacija</span>
+                                <span>Žurnalas</span>
                             </a>
                         </li>
                         <li>
@@ -943,17 +961,24 @@
                                 <span>ClickUp</span>
                             </a>
                         </li>
+                        <li>
+                            <a href="https://erp3.bss.biz/portalas/" target="_blank" class="sidebar__link">
+                                <span class="sidebar__icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                </span>
+                                <span>BSS</span>
+                            </a>
+                        </li>
                     </ul>
                 </div>
             </nav>
 
             <div class="sidebar__footer">
-                @auth
                 <div class="sidebar__user">
-                    <div class="sidebar__avatar">{{ substr(Auth::user()->name, 0, 1) }}</div>
+                    <div class="sidebar__avatar">A</div>
                     <div class="sidebar__user-info">
-                        <div class="sidebar__user-name">{{ Auth::user()->name }}</div>
-                        <div class="sidebar__user-role">{{ Auth::user()->email }}</div>
+                        <div class="sidebar__user-name">Administratorius</div>
+                        <div class="sidebar__user-role">Humis v1.0</div>
                     </div>
                     <form action="{{ route('logout') }}" method="POST" style="margin-left: 8px;">
                         @csrf
@@ -966,7 +991,6 @@
                         </button>
                     </form>
                 </div>
-                @endauth
             </div>
         </aside>
 
@@ -1109,6 +1133,37 @@
             }
         });
     }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+    (function() {
+        const lt = {
+            weekdays: {
+                shorthand: ["Sk", "Pr", "An", "Tr", "Kt", "Pn", "Št"],
+                longhand: ["Sekmadienis", "Pirmadienis", "Antradienis", "Trečiadienis", "Ketvirtadienis", "Penktadienis", "Šeštadienis"],
+            },
+            months: {
+                shorthand: ["Sau", "Vas", "Kov", "Bal", "Geg", "Bir", "Lie", "Rgp", "Rgs", "Spa", "Lap", "Grd"],
+                longhand: ["Sausis", "Vasaris", "Kovas", "Balandis", "Gegužė", "Birželis", "Liepa", "Rugpjūtis", "Rugsėjis", "Spalis", "Lapkritis", "Gruodis"],
+            },
+            firstDayOfWeek: 1,
+            rangeSeparator: " iki ",
+        };
+
+        flatpickr.l10ns.lt = lt;
+
+        document.querySelectorAll('input[type="date"]').forEach(function(input) {
+            input.type = 'text';
+            input.classList.add('form-input');
+            flatpickr(input, {
+                locale: 'lt',
+                dateFormat: 'Y-m-d',
+                allowInput: true,
+                disableMobile: true,
+            });
+        });
+    })();
     </script>
 
     @stack('scripts')

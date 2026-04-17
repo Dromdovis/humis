@@ -120,6 +120,8 @@ class ClickUpService
     /**
      * Get tasks assigned to a specific user
      */
+    private const ACTIVE_STATUSES = ['to do', 'in progress', 'review'];
+
     public function getTasksByAssignee(string $teamId, string $userId, array $params = []): ?array
     {
         $baseParams = array_merge([
@@ -131,18 +133,24 @@ class ClickUpService
 
         $response = $this->request('get', "/team/{$teamId}/task?{$query}");
         
-        // Double-check filter on PHP side (ClickUp API sometimes returns extra tasks)
         if ($response && isset($response['tasks'])) {
             $response['tasks'] = array_filter($response['tasks'], function ($task) use ($userId) {
                 if (empty($task['assignees'])) {
                     return false;
                 }
+                $isAssigned = false;
                 foreach ($task['assignees'] as $assignee) {
                     if ((string) $assignee['id'] === (string) $userId) {
-                        return true;
+                        $isAssigned = true;
+                        break;
                     }
                 }
-                return false;
+                if (!$isAssigned) {
+                    return false;
+                }
+
+                $taskStatus = strtolower(data_get($task, 'status.status', ''));
+                return in_array($taskStatus, self::ACTIVE_STATUSES);
             });
             $response['tasks'] = array_values($response['tasks']);
         }

@@ -1,15 +1,10 @@
 @extends('layouts.app')
 
 @section('title', 'Perskirstyti užduotis - ' . $vacation->employee->name)
+@section('page-title', 'Perskirstyti užduotis')
+@section('page-subtitle', $vacation->employee->name . ' atostogos: ' . $vacation->start_date->format('Y-m-d') . ' – ' . $vacation->end_date->format('Y-m-d'))
 
 @section('content')
-<div class="main__header">
-    <h1 class="main__title">Perskirstyti užduotis</h1>
-    <p class="main__subtitle">
-        {{ $vacation->employee->name }} atostogos: 
-        {{ $vacation->start_date->format('Y-m-d') }} - {{ $vacation->end_date->format('Y-m-d') }}
-    </p>
-</div>
 
 @if($vacation->defaultSubstitute)
 <div class="alert alert--info">
@@ -36,19 +31,6 @@
     </div>
 </div>
 
-{{-- Rekomendacijų legenda --}}
-<div class="card" style="margin-bottom: 16px;">
-    <div class="card__body" style="padding: 12px 16px;">
-        <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-            <span style="font-weight: 500; color: var(--text-secondary);">Tinkamumo įvertinimas:</span>
-            <span class="badge badge--success">80-100% Puikiai tinka</span>
-            <span class="badge badge--info">60-79% Gerai tinka</span>
-            <span class="badge badge--warning">40-59% Tinka</span>
-            <span class="badge badge--neutral">0-39% Mažai tinka</span>
-        </div>
-    </div>
-</div>
-
 <form action="{{ route('vacations.assign.save', $vacation) }}" method="POST">
     @csrf
 
@@ -63,10 +45,12 @@
                 <table class="table">
                     <thead>
                         <tr>
-                            <th style="width: 35%;">Užduotis</th>
+                            <th>Užduotis</th>
+                            <th>Vykdytojai</th>
+                            <th>Trukmė</th>
                             <th>Terminas</th>
                             <th>Prioritetas</th>
-                            <th style="width: 35%;">Pavaduotojas</th>
+                            <th style="width: 28%;">Pavaduotojas</th>
                             <th>Praleisti</th>
                         </tr>
                     </thead>
@@ -77,124 +61,175 @@
                             $timeEstimate = isset($task['time_estimate']) ? round($task['time_estimate'] / 3600000, 1) : null;
                             $dueDate = isset($task['due_date']) ? date('Y-m-d', $task['due_date'] / 1000) : null;
                             $priority = $task['priority']['priority'] ?? null;
+                            $priorityColor = data_get($task, 'priority.color', null);
                             $recommendations = $taskRecommendations[$task['id']] ?? [];
+                            $alreadyReassigned = $task['already_reassigned'] ?? false;
+                            $currentSubstitutes = $task['current_substitutes'] ?? [];
+                            $isProcessed = $existingAssignment?->is_processed ?? false;
+                            $taskAssignees = $task['assignees'] ?? [];
                         @endphp
-                        <tr>
+                        <tr class="{{ $alreadyReassigned ? 'row--reassigned' : '' }}"
+                            title="{{ $alreadyReassigned ? 'Ši užduotis jau turi papildomą vykdytoją' : '' }}"
+                        >
                             <td>
                                 <input type="hidden" name="assignments[{{ $index }}][clickup_task_id]" value="{{ $task['id'] }}">
                                 <input type="hidden" name="assignments[{{ $index }}][task_name]" value="{{ $task['name'] }}">
                                 <input type="hidden" name="assignments[{{ $index }}][time_estimate_hours]" value="{{ $timeEstimate }}">
                                 <input type="hidden" name="assignments[{{ $index }}][due_date]" value="{{ $dueDate }}">
+                                <input type="hidden" name="assignments[{{ $index }}][start_date]" value="{{ isset($task['start_date']) ? date('Y-m-d', $task['start_date'] / 1000) : '' }}">
                                 <input type="hidden" name="assignments[{{ $index }}][priority]" value="{{ $priority }}">
+                                <input type="hidden" name="assignments[{{ $index }}][task_status]" value="{{ data_get($task, 'status.status', '') }}">
+                                <input type="hidden" name="assignments[{{ $index }}][task_status_color]" value="{{ data_get($task, 'status.color', '') }}">
+                                <input type="hidden" name="assignments[{{ $index }}][task_url]" value="{{ $task['url'] ?? 'https://app.clickup.com/t/' . $task['id'] }}">
+                                <input type="hidden" name="assignments[{{ $index }}][task_tags]" value="{{ json_encode(collect($task['tags'] ?? [])->map(fn($t) => ['name' => $t['name'], 'bg' => $t['tag_bg'] ?? '#e0e0e0'])->toArray()) }}">
 
-                                <div style="font-weight: 500;">{{ $task['name'] }}</div>
-                                @if($task['list']['name'] ?? null)
-                                    <div style="font-size: 12px; color: var(--text-secondary);">
-                                        📁 {{ $task['list']['name'] }}
+                                <a href="{{ $task['url'] ?? 'https://app.clickup.com/t/' . $task['id'] }}" 
+                                   target="_blank" 
+                                   style="font-weight: 500; color: var(--accent); text-decoration: underline;"
+                                   title="Atidaryti ClickUp užduotį">{{ $task['name'] }}</a>
+                                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+                                    @if(data_get($task, 'status.status'))
+                                        @php
+                                            $statusColor = data_get($task, 'status.color', '#87909e');
+                                        @endphp
+                                        <span class="task-status-badge" style="--status-color: {{ $statusColor }};">
+                                            <span class="task-status-badge__dot"></span>
+                                            {{ strtoupper(data_get($task, 'status.status')) }}
+                                        </span>
+                                    @endif
+                                    @if(data_get($task, 'list.name'))
+                                        <span style="font-size: 12px; color: var(--text-secondary);">
+                                            📁 {{ data_get($task, 'list.name') }}
+                                        </span>
+                                    @endif
+                                </div>
+                                @if($alreadyReassigned)
+                                    <div class="reassigned-badge">
+                                        ✓ Jau priskirta: {{ implode(', ', $currentSubstitutes) }}
+                                    </div>
+                                @endif
+                                @if($isProcessed)
+                                    <div class="reassigned-badge reassigned-badge--synced">
+                                        ⬆ Atnaujinta ClickUp
                                     </div>
                                 @endif
                                 @if(!empty($task['tags']))
                                     <div style="font-size: 11px; margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">
                                         @foreach($task['tags'] as $tag)
-                                            <span style="background: {{ $tag['tag_bg'] ?? '#e0e0e0' }}; color: {{ $tag['tag_fg'] ?? '#333' }}; padding: 1px 6px; border-radius: 3px;">
+                                            <span class="task-tag" style="background: {{ $tag['tag_bg'] ?? '#e0e0e0' }};">
                                                 {{ $tag['name'] }}
                                             </span>
                                         @endforeach
                                     </div>
                                 @endif
-                                @if($timeEstimate)
-                                    <div style="font-size: 12px; color: var(--text-muted);">
-                                        ⏱️ ~{{ $timeEstimate }}h
+                            </td>
+                            <td>
+                                @if(!empty($taskAssignees))
+                                    <div class="assignees-list">
+                                        @foreach(array_slice($taskAssignees, 0, 3) as $assignee)
+                                            <div class="avatar avatar--xs" 
+                                                 style="background: {{ $assignee['color'] ?? '#6366f1' }};"
+                                                 title="{{ $assignee['username'] ?? $assignee['email'] ?? 'Unknown' }}">
+                                                {{ strtoupper(substr($assignee['username'] ?? $assignee['email'] ?? '?', 0, 1)) }}
+                                            </div>
+                                        @endforeach
+                                        @if(count($taskAssignees) > 3)
+                                            <span class="assignees-more" title="{{ collect(array_slice($taskAssignees, 3))->pluck('username')->join(', ') }}">
+                                                +{{ count($taskAssignees) - 3 }}
+                                            </span>
+                                        @endif
                                     </div>
+                                @else
+                                    <span style="color: var(--text-muted);">-</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($timeEstimate)
+                                    <span class="time-estimate-badge">{{ $timeEstimate }}h</span>
+                                @else
+                                    <span style="color: var(--text-muted); font-size: 12px;">-</span>
                                 @endif
                             </td>
                             <td>
                                 @if($dueDate)
-                                    <span class="{{ strtotime($dueDate) < strtotime($vacation->end_date) ? 'badge badge--danger' : '' }}">
+                                    @php
+                                        $daysLeft = (int) now()->startOfDay()->diffInDays(\Carbon\Carbon::parse($dueDate)->startOfDay(), false);
+                                    @endphp
+                                    <span class="{{ $daysLeft < 0 ? 'badge badge--danger' : (strtotime($dueDate) < strtotime($vacation->end_date) ? 'badge badge--danger' : '') }}" style="white-space: nowrap;">
                                         {{ $dueDate }}
                                     </span>
+                                    <div style="font-size: 11px; margin-top: 2px; color: {{ $daysLeft < 0 ? '#dc2626' : ($daysLeft <= 3 ? '#d97706' : 'var(--text-muted)') }};">
+                                        @if($daysLeft < 0)
+                                            Vėluoja {{ abs($daysLeft) }} d.
+                                        @elseif($daysLeft === 0)
+                                            Šiandien
+                                        @else
+                                            Liko {{ $daysLeft }} {{ $daysLeft === 1 ? 'diena' : ($daysLeft < 10 && $daysLeft % 10 >= 2 ? 'dienos' : 'dienų') }}
+                                        @endif
+                                    </div>
                                 @else
                                     <span style="color: var(--text-muted);">-</span>
                                 @endif
                             </td>
                             <td>
                                 @if($priority)
-                                    @switch($priority)
-                                        @case('urgent')
-                                            <span class="badge badge--danger">Skubu</span>
-                                            @break
-                                        @case('high')
-                                            <span class="badge badge--warning">Aukštas</span>
-                                            @break
-                                        @case('normal')
-                                            <span class="badge badge--info">Normalus</span>
-                                            @break
-                                        @default
-                                            <span class="badge badge--neutral">{{ $priority }}</span>
-                                    @endswitch
+                                    @php
+                                        $priorityColors = ['urgent' => '#f50000', 'high' => '#ffcc00', 'normal' => '#6fddff', 'low' => '#d8d8d8'];
+                                        $pColor = $priorityColor ?? ($priorityColors[$priority] ?? '#d8d8d8');
+                                    @endphp
+                                    <span class="priority-badge" style="--priority-color: {{ $pColor }};">
+                                        <span class="priority-badge__flag">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="{{ $pColor }}" stroke="{{ $pColor }}" stroke-width="2">
+                                                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                                                <line x1="4" y1="22" x2="4" y2="15"></line>
+                                            </svg>
+                                        </span>
+                                        {{ ucfirst($priority) }}
+                                    </span>
                                 @else
                                     <span style="color: var(--text-muted);">-</span>
                                 @endif
                             </td>
                             <td style="position: relative;">
                                 <div class="recommendation-select-wrapper">
-                                    <select name="assignments[{{ $index }}][substitute_id]" 
-                                            class="form-input form-select recommendation-select" 
-                                            data-task-id="{{ $task['id'] }}"
-                                            data-recommendations='@json($recommendations)'>
-                                        <option value="">-- Pasirinkti pavaduotoją --</option>
+                                    @if($recommendationEnabled)
+                                        @php
+                                            $recOptions = collect($recommendations)->map(fn($r) => [
+                                                'id' => $r['id'],
+                                                'name' => $r['name'] . ' — ' . $r['score'] . '%',
+                                                'color' => $r['color'] ?? '#10b981',
+                                            ])->toArray();
+                                        @endphp
+                                        @include('components.searchable-select', [
+                                            'name' => "assignments[{$index}][substitute_id]",
+                                            'options' => $recOptions,
+                                            'value' => $existingAssignment?->substitute_id,
+                                            'placeholder' => '-- Pasirinkti pavaduotoją --',
+                                            'searchPlaceholder' => 'Ieškoti darbuotojo...',
+                                            'showAvatar' => true,
+                                        ])
                                         
-                                        {{-- BSS numatytas pavaduotojas viršuje --}}
-                                        @if($vacation->defaultSubstitute)
-                                            @php
-                                                $bssRec = collect($recommendations)->firstWhere('id', $vacation->defaultSubstitute->id);
-                                                $bssScore = $bssRec['score'] ?? 50;
-                                            @endphp
-                                            <option value="{{ $vacation->defaultSubstitute->id }}" 
-                                                    data-score="{{ $bssScore }}"
-                                                    data-color="{{ $vacation->defaultSubstitute->color ?? '#6366f1' }}"
-                                                    {{ !$existingAssignment && !$existingAssignment?->substitute_id ? 'selected' : '' }}>
-                                                ⭐ {{ $vacation->defaultSubstitute->name }} (BSS) — {{ $bssScore }}%
-                                            </option>
-                                        @endif
-
-                                        {{-- Rekomenduojami darbuotojai surikiuoti pagal balą --}}
-                                        @foreach($recommendations as $rec)
-                                            @if(!$vacation->defaultSubstitute || $rec['id'] !== $vacation->defaultSubstitute->id)
-                                                @php
-                                                    $scoreClass = '';
-                                                    if ($rec['score'] >= 80) $scoreClass = 'score-excellent';
-                                                    elseif ($rec['score'] >= 60) $scoreClass = 'score-good';
-                                                    elseif ($rec['score'] >= 40) $scoreClass = 'score-average';
-                                                    else $scoreClass = 'score-low';
-                                                @endphp
-                                                <option value="{{ $rec['id'] }}" 
-                                                        data-score="{{ $rec['score'] }}"
-                                                        data-color="{{ $rec['color'] }}"
-                                                        data-details="{{ $rec['details'] }}"
-                                                        class="{{ $scoreClass }}"
-                                                        {{ $existingAssignment?->substitute_id == $rec['id'] ? 'selected' : '' }}>
-                                                    {{ $rec['name'] }} — {{ $rec['score'] }}%
-                                                </option>
-                                            @endif
-                                        @endforeach
-                                    </select>
-                                    
-                                    {{-- Balo indikatorius --}}
-                                    <div class="score-indicator" id="score-{{ $task['id'] }}"></div>
-                                    
-                                    {{-- Info mygtukas detalėms --}}
-                                    <button type="button" 
-                                            class="info-btn" 
-                                            id="info-btn-{{ $task['id'] }}"
-                                            onclick="showRecommendationDetails('{{ $task['id'] }}')"
-                                            title="Rodyti rekomendacijos detales"
-                                            style="display: none;">
-                                        ℹ️
-                                    </button>
+                                        <button type="button" 
+                                                class="info-btn" 
+                                                id="info-btn-{{ $task['id'] }}"
+                                                onclick="showRecommendationDetails('{{ $task['id'] }}')"
+                                                title="Rodyti rekomendacijos detales"
+                                                data-recommendations='@json($recommendations)'>
+                                            ℹ️
+                                        </button>
+                                    @else
+                                        @include('components.searchable-select', [
+                                            'name' => "assignments[{$index}][substitute_id]",
+                                            'options' => $employees->map(fn($e) => ['id' => $e->id, 'name' => $e->name, 'color' => $e->color ?? '#10b981'])->toArray(),
+                                            'value' => $existingAssignment?->substitute_id,
+                                            'placeholder' => '-- Pasirinkti pavaduotoją --',
+                                            'searchPlaceholder' => 'Ieškoti darbuotojo...',
+                                            'showAvatar' => true,
+                                        ])
+                                    @endif
                                 </div>
                                 
-                                {{-- Detalių popup --}}
+                                @if($recommendationEnabled)
                                 <div class="recommendation-details-popup" id="details-popup-{{ $task['id'] }}" style="display: none;">
                                     <div class="popup-header">
                                         <span class="popup-title">Kodėl rekomenduojamas?</span>
@@ -202,6 +237,7 @@
                                     </div>
                                     <div class="popup-body" id="details-content-{{ $task['id'] }}"></div>
                                 </div>
+                                @endif
                             </td>
                             <td style="text-align: center;">
                                 <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -219,38 +255,11 @@
                 </table>
 
                 <div class="form-footer" style="padding: 20px; border-top: 1px solid var(--border-color); background: var(--bg-body);">
-                    <div class="schedule-options" style="margin-bottom: 16px;">
-                        <div style="font-weight: 600; margin-bottom: 12px;">Kada vykdyti priskyrimą ClickUp?</div>
-                        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-                            <label class="schedule-option" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; padding: 12px 16px; border: 2px solid var(--border-color); border-radius: 8px; flex: 1; min-width: 200px;">
-                                <input type="radio" name="schedule_type" value="now" checked style="margin-top: 3px;">
-                                <div>
-                                    <div style="font-weight: 500;">Išsaugoti ir vėliau vykdyti</div>
-                                    <div style="font-size: 13px; color: var(--text-secondary);">Priskyrimai bus išsaugoti, bet nevykdomi ClickUp</div>
-                                </div>
-                            </label>
-                            <label class="schedule-option" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; padding: 12px 16px; border: 2px solid var(--border-color); border-radius: 8px; flex: 1; min-width: 200px;">
-                                <input type="radio" name="schedule_type" value="scheduled" style="margin-top: 3px;">
-                                <div>
-                                    <div style="font-weight: 500;">Suplanuoti konkrečiai datai</div>
-                                    <div style="font-size: 13px; color: var(--text-secondary);">Priskyrimai bus vykdomi nurodytą dieną</div>
-                                    <input type="date" 
-                                           name="scheduled_date" 
-                                           class="form-input" 
-                                           style="margin-top: 8px; width: 100%;" 
-                                           min="{{ date('Y-m-d') }}"
-                                           max="{{ $vacation->start_date->format('Y-m-d') }}"
-                                           value="{{ $vacation->start_date->subDays(1)->format('Y-m-d') }}"
-                                           disabled>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
                     <div style="display: flex; gap: 12px;">
                         <button type="submit" class="btn btn--primary">
-                            💾 Išsaugoti paskirstymą
+                            Vykdyti perskirstymą
                         </button>
-                        <a href="{{ route('vacations.show', $vacation) }}" class="btn btn--secondary">
+                        <a href="{{ route('vacations.index') }}" class="btn btn--secondary">
                             Atšaukti
                         </a>
                     </div>
@@ -270,6 +279,130 @@
 </form>
 
 <style>
+.row--reassigned {
+    background: #f0fdf4;
+}
+
+.row--reassigned td {
+    border-left: 3px solid #059669;
+}
+
+.row--reassigned td:first-child {
+    border-left-width: 3px;
+}
+
+.row--reassigned td:not(:first-child) {
+    border-left: none;
+}
+
+.reassigned-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #065f46;
+    background: #d1fae5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+.reassigned-badge--synced {
+    color: #1e40af;
+    background: #dbeafe;
+}
+
+.task-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--status-color) 15%, transparent);
+    color: var(--status-color);
+    white-space: nowrap;
+}
+
+.task-status-badge__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--status-color);
+    flex-shrink: 0;
+}
+
+.task-tag {
+    color: #fff;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-weight: 500;
+    text-shadow: 0 0 2px rgba(0,0,0,0.3);
+}
+
+.assignees-list {
+    display: flex;
+    align-items: center;
+}
+
+.assignees-list .avatar--xs {
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    border: 2px solid var(--bg-white);
+    margin-left: -6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.assignees-list .avatar--xs:first-child {
+    margin-left: 0;
+}
+
+.assignees-more {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 4px;
+    cursor: help;
+}
+
+.time-estimate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dark);
+    background: #f1f5f9;
+    padding: 3px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
+.priority-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dark);
+    white-space: nowrap;
+}
+
+.priority-badge__flag {
+    display: flex;
+    align-items: center;
+}
+
 .recommendation-select-wrapper {
     position: relative;
     display: flex;
@@ -277,42 +410,8 @@
     gap: 8px;
 }
 
-.recommendation-select {
+.recommendation-select-wrapper .searchable-select {
     flex: 1;
-    padding-right: 50px;
-    font-size: 13px;
-}
-
-.score-indicator {
-    position: absolute;
-    right: 45px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 4px;
-    pointer-events: none;
-}
-
-.score-indicator.excellent {
-    background: var(--color-success-light, #d1fae5);
-    color: var(--color-success, #059669);
-}
-
-.score-indicator.good {
-    background: var(--color-info-light, #dbeafe);
-    color: var(--color-info, #2563eb);
-}
-
-.score-indicator.average {
-    background: var(--color-warning-light, #fef3c7);
-    color: var(--color-warning, #d97706);
-}
-
-.score-indicator.low {
-    background: var(--color-neutral-light, #f3f4f6);
-    color: var(--color-neutral, #6b7280);
 }
 
 .info-btn {
@@ -480,19 +579,6 @@
 .total-score-value.average { color: var(--color-warning, #d97706); }
 .total-score-value.low { color: var(--color-neutral, #6b7280); }
 
-.recommendation-select option {
-    padding: 8px;
-}
-
-.recommendation-select option[data-score] {
-    font-weight: 500;
-}
-
-.recommendation-select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 .badge--success {
     background: var(--color-success-light, #d1fae5);
     color: var(--color-success, #059669);
@@ -611,28 +697,9 @@
 </style>
 
 <script>
-let recommendationsData = {};
-let previousSelectValues = {};
+const recommendationEnabled = {{ $recommendationEnabled ? 'true' : 'false' }};
 
 document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.recommendation-select').forEach(function(select) {
-        const taskId = select.dataset.taskId;
-
-        try {
-            recommendationsData[taskId] = JSON.parse(select.dataset.recommendations || '[]');
-        } catch(e) {
-            recommendationsData[taskId] = [];
-        }
-
-        previousSelectValues[taskId] = select.value;
-        
-        updateScoreIndicator(select);
-        
-        select.addEventListener('change', function() {
-            handleSelectChange(this, taskId);
-        });
-    });
-
     document.addEventListener('click', function(e) {
         if (!e.target.closest('.recommendation-details-popup') && 
             !e.target.closest('.info-btn')) {
@@ -643,127 +710,24 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-let pendingVacationConfirm = null;
-
-function handleSelectChange(select, taskId) {
-    const selectedId = parseInt(select.value);
-    
-    if (!selectedId) {
-        updateScoreIndicator(select);
-        hideRecommendationDetails(taskId);
-        previousSelectValues[taskId] = select.value;
-        return;
-    }
-
-    const recommendations = recommendationsData[taskId] || [];
-    const rec = recommendations.find(r => r.id === selectedId);
-
-    // Patikrinti ar pasirinktas asmuo atostogauja (availability score = 0)
-    if (rec && rec.breakdown && rec.breakdown.availability && rec.breakdown.availability.score === 0) {
-        const employeeName = rec.name;
-        const availabilityDetails = rec.breakdown.availability.details || 'atostogauja tuo pačiu laikotarpiu';
-
-        pendingVacationConfirm = {
-            select: select,
-            taskId: taskId,
-            value: select.value
-        };
-
-        showVacationConfirmModal(employeeName, availabilityDetails);
-        return;
-    }
-
-    previousSelectValues[taskId] = select.value;
-    updateScoreIndicator(select);
-    hideRecommendationDetails(taskId);
-}
-
-function showVacationConfirmModal(employeeName, details) {
-    const modal = document.getElementById('vacation-confirm-modal');
-    const message = document.getElementById('vacation-confirm-message');
-
-    const cleanDetails = details.replace('⚠️ ', '');
-    
-    message.innerHTML = `
-        <strong>${employeeName}</strong>
-        ${cleanDetails}
-        <br><br>
-        Ar tikrai norite priskirti šį darbuotoją pavaduoti?
-    `;
-    
-    modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-}
-
-function cancelVacationConfirm() {
-    const modal = document.getElementById('vacation-confirm-modal');
-    modal.style.display = 'none';
-    document.body.style.overflow = '';
-    
-    if (pendingVacationConfirm) {
-        const { select, taskId } = pendingVacationConfirm;
-        select.value = previousSelectValues[taskId] || '';
-        updateScoreIndicator(select);
-        pendingVacationConfirm = null;
-    }
-}
-
-function proceedWithVacationAssignment() {
-    const modal = document.getElementById('vacation-confirm-modal');
-    modal.style.display = 'none';
-    document.body.style.overflow = '';
-    
-    if (pendingVacationConfirm) {
-        const { select, taskId, value } = pendingVacationConfirm;
-        previousSelectValues[taskId] = value;
-        updateScoreIndicator(select);
-        hideRecommendationDetails(taskId);
-        pendingVacationConfirm = null;
-    }
-}
-
-function updateScoreIndicator(select) {
-    const taskId = select.dataset.taskId;
-    const indicator = document.getElementById('score-' + taskId);
-    const infoBtn = document.getElementById('info-btn-' + taskId);
-    const selectedOption = select.options[select.selectedIndex];
-    
-    if (!indicator) return;
-    
-    if (selectedOption && selectedOption.value && selectedOption.dataset.score) {
-        const score = parseInt(selectedOption.dataset.score);
-        indicator.textContent = score + '%';
-        indicator.style.display = 'block';
-
-        if (infoBtn) infoBtn.style.display = 'flex';
-
-        indicator.className = 'score-indicator';
-        if (score >= 80) {
-            indicator.classList.add('excellent');
-        } else if (score >= 60) {
-            indicator.classList.add('good');
-        } else if (score >= 40) {
-            indicator.classList.add('average');
-        } else {
-            indicator.classList.add('low');
-        }
-    } else {
-        indicator.style.display = 'none';
-        if (infoBtn) infoBtn.style.display = 'none';
-    }
-}
-
 function showRecommendationDetails(taskId) {
-    const select = document.querySelector(`.recommendation-select[data-task-id="${taskId}"]`);
+    const infoBtn = document.getElementById('info-btn-' + taskId);
     const popup = document.getElementById('details-popup-' + taskId);
     const content = document.getElementById('details-content-' + taskId);
     
-    if (!select || !popup || !content) return;
-    
-    const selectedId = parseInt(select.value);
+    if (!infoBtn || !popup || !content) return;
+
+    const wrapper = infoBtn.closest('.recommendation-select-wrapper');
+    const hiddenInput = wrapper ? wrapper.querySelector('input[type="hidden"]') : null;
+    const selectedId = hiddenInput ? parseInt(hiddenInput.value) : null;
+
     if (!selectedId) return;
 
-    const recommendations = recommendationsData[taskId] || [];
+    let recommendations = [];
+    try {
+        recommendations = JSON.parse(infoBtn.dataset.recommendations || '[]');
+    } catch(e) {}
+
     const rec = recommendations.find(r => r.id === selectedId);
 
     if (!rec) {
@@ -772,7 +736,7 @@ function showRecommendationDetails(taskId) {
         return;
     }
 
-    let html = `<div class="employee-name" style="font-weight: 600; font-size: 16px; margin-bottom: 12px;">${rec.name}</div>`;
+    let html = `<div style="font-weight: 600; font-size: 16px; margin-bottom: 12px;">${rec.name}</div>`;
     
     if (rec.breakdown) {
         const categories = ['skills', 'workload', 'availability', 'project'];
@@ -819,7 +783,7 @@ function showRecommendationDetails(taskId) {
         }
     });
     
-    popup.style.display = 'block';
+    popup.style.display = popup.style.display === 'block' ? 'none' : 'block';
 }
 
 function hideRecommendationDetails(taskId) {
@@ -836,41 +800,26 @@ function getScoreClass(score) {
 
 function toggleExclude(checkbox) {
     const row = checkbox.closest('tr');
-    const select = row.querySelector('select');
-    const taskId = select.dataset.taskId;
+    const ssWrapper = row.querySelector('.searchable-select');
     
-    select.disabled = checkbox.checked;
-    
-    if (checkbox.checked) {
-        select.value = '';
-        updateScoreIndicator(select);
-        hideRecommendationDetails(taskId);
+    if (ssWrapper) {
+        const trigger = ssWrapper.querySelector('.searchable-select__trigger');
+        if (trigger) trigger.disabled = checkbox.checked;
+        
+        if (checkbox.checked) {
+            const hiddenInput = ssWrapper.querySelector('input[type="hidden"]');
+            if (hiddenInput) hiddenInput.value = '';
+            const valueDisplay = ssWrapper.querySelector('.searchable-select__value');
+            if (valueDisplay) {
+                const placeholder = ssWrapper.querySelector('.searchable-select__trigger').dataset.placeholder || '-- Pasirinkti pavaduotoją --';
+                valueDisplay.innerHTML = `<span class="searchable-select__placeholder">${placeholder}</span>`;
+            }
+            ssWrapper.querySelectorAll('.searchable-select__option--selected').forEach(
+                opt => opt.classList.remove('searchable-select__option--selected')
+            );
+        }
     }
 }
 
-document.querySelectorAll('input[name="schedule_type"]').forEach(function(radio) {
-    radio.addEventListener('change', function() {
-        const dateInput = document.querySelector('input[name="scheduled_date"]');
-        const scheduleOptions = document.querySelectorAll('.schedule-option');
-        
-        scheduleOptions.forEach(function(opt) {
-            opt.style.borderColor = 'var(--border-color)';
-        });
-        
-        if (this.value === 'scheduled') {
-            dateInput.disabled = false;
-            dateInput.required = true;
-            this.closest('.schedule-option').style.borderColor = 'var(--accent)';
-        } else {
-            dateInput.disabled = true;
-            dateInput.required = false;
-            this.closest('.schedule-option').style.borderColor = 'var(--accent)';
-        }
-    });
-
-    if (radio.checked) {
-        radio.closest('.schedule-option').style.borderColor = 'var(--accent)';
-    }
-});
 </script>
 @endsection

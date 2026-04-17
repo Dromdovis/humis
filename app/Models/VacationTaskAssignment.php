@@ -16,7 +16,12 @@ class VacationTaskAssignment extends Model
         'exclude_reason',
         'time_estimate_hours',
         'due_date',
+        'start_date',
         'priority',
+        'task_status',
+        'task_status_color',
+        'task_url',
+        'task_tags',
         'is_processed',
     ];
 
@@ -24,7 +29,9 @@ class VacationTaskAssignment extends Model
         'is_excluded' => 'boolean',
         'is_processed' => 'boolean',
         'due_date' => 'date',
+        'start_date' => 'date',
         'time_estimate_hours' => 'integer',
+        'task_tags' => 'array',
     ];
 
     public function vacation(): BelongsTo

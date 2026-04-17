@@ -2,7 +2,6 @@
 
 @section('title', $employee->name . ' - Darbuotojai')
 @section('page-title', $employee->name)
-@section('page-subtitle', $employee->email ?? 'Darbuotojas')
 
 @section('content')
 <div class="grid grid--2">
@@ -32,7 +31,7 @@
                                         <div style="flex: 1; font-weight: 500;">{{ $skill->name }}</div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             <select name="skills[{{ $skill->id }}][level]" class="form-input" style="width: 120px; padding: 6px 8px; font-size: 13px;">
-                                                <option value="0" {{ $currentLevel == 0 ? 'selected' : '' }}>Nemoka</option>
+                                                <option value="0" {{ $currentLevel == 0 ? 'selected' : '' }}>Nenustatyta</option>
                                                 <option value="1" {{ $currentLevel == 1 ? 'selected' : '' }}>1 - Pradedantis</option>
                                                 <option value="2" {{ $currentLevel == 2 ? 'selected' : '' }}>2 - Bazinis</option>
                                                 <option value="3" {{ $currentLevel == 3 ? 'selected' : '' }}>3 - Vidutinis</option>

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Employee;
 use App\Models\Vacation;
 use App\Models\VacationTaskAssignment;
 use App\Services\ClickUpService;
+use App\Models\Setting;
 use App\Services\RecommendationService;
 use Illuminate\Http\Request;
 
@@ -53,11 +55,23 @@ class VacationController extends Controller
             'employee_id' => 'required|exists:employees,id',
             'start_date' => 'required|date|after_or_equal:today',
             'end_date' => 'required|date|after_or_equal:start_date',
+        ], [
+            'employee_id.required' => 'Pasirinkite darbuotoją.',
+            'employee_id.exists' => 'Pasirinktas darbuotojas nerastas.',
+            'start_date.required' => 'Įveskite pradžios datą.',
+            'start_date.date' => 'Neteisingas datos formatas.',
+            'start_date.after_or_equal' => 'Pradžios data turi būti šiandienos arba vėlesnė.',
+            'end_date.required' => 'Įveskite pabaigos datą.',
+            'end_date.date' => 'Neteisingas datos formatas.',
+            'end_date.after_or_equal' => 'Pabaigos data turi būti lygi arba vėlesnė už pradžios datą.',
         ]);
 
         $validated['status'] = 'approved';
 
         $vacation = Vacation::create($validated);
+
+        $employee = Employee::find($validated['employee_id']);
+        ActivityLog::log('vacation_created', "{$employee->name} atostogos: {$validated['start_date']} — {$validated['end_date']}");
 
         return redirect()->route('vacations.assign', $vacation)
             ->with('success', 'Atostogos sukurtos. Pasirinkite pavaduotojus užduotims.');
@@ -83,16 +97,43 @@ class VacationController extends Controller
         $teamId = config('services.clickup.team_id');
         $tasks = [];
 
-        if ($teamId && $vacation->employee->clickup_user_id) {
+        $vacationClickupUserId = $vacation->employee->clickup_user_id;
+
+        if ($teamId && $vacationClickupUserId) {
             $response = $clickUpService->getTasksByAssignee(
                 $teamId,
-                $vacation->employee->clickup_user_id
+                $vacationClickupUserId
             );
 
             if ($response && isset($response['tasks'])) {
                 $tasks = $response['tasks'];
+                usort($tasks, function ($a, $b) {
+                    $aDate = $a['due_date'] ?? PHP_INT_MAX;
+                    $bDate = $b['due_date'] ?? PHP_INT_MAX;
+                    return $aDate <=> $bDate;
+                });
             }
         }
+
+        $employeesByClickupId = Employee::whereNotNull('clickup_user_id')
+            ->pluck('name', 'clickup_user_id')
+            ->toArray();
+
+        foreach ($tasks as &$task) {
+            $otherAssignees = [];
+            if (!empty($task['assignees'])) {
+                foreach ($task['assignees'] as $assignee) {
+                    $assigneeId = (string) $assignee['id'];
+                    if ($assigneeId !== (string) $vacationClickupUserId) {
+                        $otherAssignees[] = $employeesByClickupId[$assigneeId]
+                            ?? ($assignee['username'] ?? $assignee['email'] ?? 'Nežinomas');
+                    }
+                }
+            }
+            $task['already_reassigned'] = !empty($otherAssignees);
+            $task['current_substitutes'] = $otherAssignees;
+        }
+        unset($task);
 
         $employees = Employee::where('is_active', true)
             ->where('id', '!=', $vacation->employee_id)
@@ -100,37 +141,46 @@ class VacationController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Gauti užduočių skaičius VISIEMS potencialiems pavaduotojams iš ClickUp
- 
-        $clickupTaskCounts = [];
-        if ($teamId) {
-            foreach ($employees as $employee) {
-                if ($employee->clickup_user_id) {
-                    $empTasks = $clickUpService->getTasksByAssignee(
-                        $teamId,
-                        $employee->clickup_user_id
-                    );
-                    $clickupTaskCounts[$employee->clickup_user_id] = 
-                        isset($empTasks['tasks']) ? count($empTasks['tasks']) : 0;
+        $recommendationEnabled = Setting::get('recommendation_engine', 'disabled') === 'enabled';
+        $taskRecommendations = [];
+
+        if ($recommendationEnabled) {
+            $defaultHoursPerTask = 2;
+            $clickupWorkloadHours = [];
+            if ($teamId) {
+                foreach ($employees as $employee) {
+                    if ($employee->clickup_user_id) {
+                        $empTasks = $clickUpService->getTasksByAssignee(
+                            $teamId,
+                            $employee->clickup_user_id
+                        );
+                        $totalHours = 0;
+                        if (isset($empTasks['tasks'])) {
+                            foreach ($empTasks['tasks'] as $empTask) {
+                                $estimate = $empTask['time_estimate'] ?? null;
+                                $totalHours += $estimate
+                                    ? round($estimate / 3600000, 1)
+                                    : $defaultHoursPerTask;
+                            }
+                        }
+                        $clickupWorkloadHours[$employee->clickup_user_id] = $totalHours;
+                    }
                 }
+            }
+
+            $recommendationService->setClickupWorkloadHours($clickupWorkloadHours);
+
+            foreach ($tasks as $task) {
+                $taskRecommendations[$task['id']] = $recommendationService->getRecommendationsForDropdown(
+                    $task,
+                    $vacation->employee_id,
+                    $vacation->start_date,
+                    $vacation->end_date
+                );
             }
         }
 
-        // Nustatyti užduočių skaičius recommendation service'ui
-        $recommendationService->setClickupTaskCounts($clickupTaskCounts);
-
-        // Apskaičiuoti rekomendacijas kiekvienai užduočiai
-        $taskRecommendations = [];
-        foreach ($tasks as $task) {
-            $taskRecommendations[$task['id']] = $recommendationService->getRecommendationsForDropdown(
-                $task,
-                $vacation->employee_id,
-                $vacation->start_date,
-                $vacation->end_date
-            );
-        }
-
-        return view('vacations.assign', compact('vacation', 'tasks', 'employees', 'taskRecommendations'));
+        return view('vacations.assign', compact('vacation', 'tasks', 'employees', 'taskRecommendations', 'recommendationEnabled'));
     }
 
     /**
@@ -169,14 +219,26 @@ class VacationController extends Controller
             'assignments.*.exclude_reason' => 'nullable|string|max:255',
             'assignments.*.time_estimate_hours' => 'nullable|integer',
             'assignments.*.due_date' => 'nullable|date',
+            'assignments.*.start_date' => 'nullable|date',
             'assignments.*.priority' => 'nullable|string',
-            'schedule_type' => 'required|in:now,scheduled',
-            'scheduled_date' => 'required_if:schedule_type,scheduled|nullable|date|after_or_equal:today',
+            'assignments.*.task_status' => 'nullable|string',
+            'assignments.*.task_status_color' => 'nullable|string',
+            'assignments.*.task_url' => 'nullable|string',
+            'assignments.*.task_tags' => 'nullable|string',
         ]);
 
-        $vacation->taskAssignments()->delete();
+        $vacation->taskAssignments()->where('is_processed', false)->delete();
+
+        $processedTaskIds = $vacation->taskAssignments()
+            ->where('is_processed', true)
+            ->pluck('clickup_task_id')
+            ->toArray();
 
         foreach ($validated['assignments'] ?? [] as $assignment) {
+            if (in_array($assignment['clickup_task_id'], $processedTaskIds)) {
+                continue;
+            }
+
             VacationTaskAssignment::create([
                 'vacation_id' => $vacation->id,
                 'clickup_task_id' => $assignment['clickup_task_id'],
@@ -186,18 +248,16 @@ class VacationController extends Controller
                 'exclude_reason' => $assignment['exclude_reason'] ?? null,
                 'time_estimate_hours' => $assignment['time_estimate_hours'] ?? null,
                 'due_date' => $assignment['due_date'] ?? null,
+                'start_date' => $assignment['start_date'] ?? null,
                 'priority' => $assignment['priority'] ?? null,
+                'task_status' => $assignment['task_status'] ?? null,
+                'task_status_color' => $assignment['task_status_color'] ?? null,
+                'task_url' => $assignment['task_url'] ?? null,
+                'task_tags' => json_decode($assignment['task_tags'] ?? '[]', true),
             ]);
         }
 
-        if ($validated['schedule_type'] === 'scheduled' && $validated['scheduled_date']) {
-            $vacation->update([
-                'scheduled_at' => $validated['scheduled_date'],
-            ]);
-            
-            return redirect()->route('vacations.show', $vacation)
-                ->with('success', 'Priskyrimas suplanuotas ' . \Carbon\Carbon::parse($validated['scheduled_date'])->format('Y-m-d'));
-        }
+        ActivityLog::log('tasks_reassigned', "{$vacation->employee->name} atostogų užduotys perskirstytos");
 
         return redirect()->route('vacations.show', $vacation)
             ->with('success', 'Užduočių paskirstymas išsaugotas');
@@ -240,6 +300,8 @@ class VacationController extends Controller
             'status' => 'processed',
         ]);
 
+        ActivityLog::log('tasks_processed', "{$vacation->employee->name} — {$processed} užduotys priskirtos ClickUp");
+
         if ($errors > 0) {
             return redirect()->route('vacations.show', $vacation)
                 ->with('warning', "Perskirstyta {$processed} užduočių, bet {$errors} nepavyko.");
@@ -261,6 +323,9 @@ class VacationController extends Controller
         }
 
         $employeeName = $vacation->employee->name ?? 'Nežinomas';
+
+        ActivityLog::log('vacation_deleted', "{$employeeName} atostogos ištrintos");
+
         $vacation->delete();
 
         return redirect()->route('vacations.index')

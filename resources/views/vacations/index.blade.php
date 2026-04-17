@@ -414,6 +414,18 @@
         if (typeof initSearchableSelects === 'function') {
             initSearchableSelects();
         }
+        document.querySelectorAll('#create-modal input[type="date"]').forEach(function(input) {
+            if (!input._flatpickr) {
+                input.type = 'text';
+                input.classList.add('form-input');
+                flatpickr(input, {
+                    locale: 'lt',
+                    dateFormat: 'Y-m-d',
+                    allowInput: true,
+                    disableMobile: true,
+                });
+            }
+        });
     }
 
     function closeCreateModal() {
