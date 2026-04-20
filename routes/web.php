@@ -55,6 +55,7 @@ Route::middleware('auth')->group(function () {
     // Nustatymai
     Route::get('/nustatymai', [SettingsController::class, 'index'])->name('settings.index');
     Route::post('/nustatymai', [SettingsController::class, 'update'])->name('settings.update');
+    Route::post('/nustatymai/isvalyti', [SettingsController::class, 'resetAllData'])->name('settings.reset');
 
     // Žurnalas
     Route::get('/zurnalas', [ActivityLogController::class, 'index'])->name('activity-log.index');

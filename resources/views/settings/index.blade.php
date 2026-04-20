@@ -69,6 +69,45 @@
     </div>
 </div>
 
+@if(config('app.humis_password'))
+<div class="card" style="margin-top: 24px; border-color: var(--danger, #dc2626);">
+    <div class="card__header">
+        <h2 class="card__title" style="color: var(--danger, #dc2626);">Pavojinga zona</h2>
+    </div>
+    <div class="card__body">
+        <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
+            Išvalyti <strong>visus</strong> Humis duomenis: darbuotojus, projektus, atostogas, įgūdžius, nustatymus, žurnalą ir Laravel naudotojus.
+            <strong>ClickUp nekeičiamas</strong> — tai tik lokali kopija DB. Po išvalymo reikės vėl sinchronizuoti iš naujo workspace.
+        </p>
+        <form action="{{ route('settings.reset') }}" method="POST" onsubmit="return confirm('Ar tikrai išvalyti visus duomenis? Šio veiksmo atšaukti negalima.');">
+            @csrf
+            <div style="margin-bottom: 12px;">
+                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 14px; color: var(--text-dark);">
+                    <input type="checkbox" name="confirm_reset" value="1" {{ old('confirm_reset') ? 'checked' : '' }} style="margin-top: 3px;">
+                    Suprantu, kad duomenys bus negrįžtamai ištrinti
+                </label>
+                @error('confirm_reset')
+                    <div style="color: var(--danger, #dc2626); font-size: 13px; margin-top: 6px;">{{ $message }}</div>
+                @enderror
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label for="reset_password" style="display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">Humis slaptažodis (kaip prisijungiant)</label>
+                <input type="password" name="reset_password" id="reset_password" autocomplete="current-password"
+                       class="form-input"
+                       style="max-width: 320px; width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-body); color: var(--text-dark);"
+                       required>
+                @error('reset_password')
+                    <div style="color: var(--danger, #dc2626); font-size: 13px; margin-top: 6px;">{{ $message }}</div>
+                @enderror
+            </div>
+            <button type="submit" class="btn btn--danger">
+                Išvalyti visus duomenis
+            </button>
+        </form>
+    </div>
+</div>
+@endif
+
 @push('styles')
 <style>
 .toggle {
