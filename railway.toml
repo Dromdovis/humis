@@ -6,4 +6,4 @@ dockerfilePath = "Dockerfile"
 startCommand = "bash railway-start.sh"
 restartPolicyType = "ON_FAILURE"
 healthcheckPath = "/prisijungti"
-healthcheckTimeout = 60
+healthcheckTimeout = 300
