@@ -70,39 +70,56 @@
 </div>
 
 @if(config('app.humis_password'))
-<div class="card" style="margin-top: 24px; border-color: var(--danger, #dc2626);">
+<div class="card" style="margin-top: 24px;">
     <div class="card__header">
-        <h2 class="card__title" style="color: var(--danger, #dc2626);">Pavojinga zona</h2>
+        <h2 class="card__title">Išvalyti duomenis</h2>
     </div>
     <div class="card__body">
         <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
             Išvalyti <strong>visus</strong> Humis duomenis: darbuotojus, projektus, atostogas, įgūdžius, nustatymus, žurnalą ir Laravel naudotojus.
             <strong>ClickUp nekeičiamas</strong> — tai tik lokali kopija DB. Po išvalymo reikės vėl sinchronizuoti iš naujo workspace.
         </p>
-        <form action="{{ route('settings.reset') }}" method="POST" onsubmit="return confirm('Ar tikrai išvalyti visus duomenis? Šio veiksmo atšaukti negalima.');">
-            @csrf
-            <div style="margin-bottom: 12px;">
-                <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 14px; color: var(--text-dark);">
-                    <input type="checkbox" name="confirm_reset" value="1" {{ old('confirm_reset') ? 'checked' : '' }} style="margin-top: 3px;">
-                    Suprantu, kad duomenys bus negrįžtamai ištrinti
-                </label>
-                @error('confirm_reset')
-                    <div style="color: var(--danger, #dc2626); font-size: 13px; margin-top: 6px;">{{ $message }}</div>
-                @enderror
-            </div>
-            <div style="margin-bottom: 12px;">
-                <label for="reset_password" style="display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">Humis slaptažodis (kaip prisijungiant)</label>
-                <input type="password" name="reset_password" id="reset_password" autocomplete="current-password"
-                       class="form-input"
-                       style="max-width: 320px; width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-body); color: var(--text-dark);"
-                       required>
-                @error('reset_password')
-                    <div style="color: var(--danger, #dc2626); font-size: 13px; margin-top: 6px;">{{ $message }}</div>
-                @enderror
-            </div>
-            <button type="submit" class="btn btn--danger">
-                Išvalyti visus duomenis
+        <button type="button" class="btn btn--danger" onclick="openResetModal()">
+            Išvalyti visus duomenis
+        </button>
+    </div>
+</div>
+
+<div id="reset-modal" class="modal" style="display: none;">
+    <div class="modal__backdrop" onclick="closeResetModal()"></div>
+    <div class="modal__content" style="max-width: 460px;">
+        <div class="modal__header">
+            <h3 class="modal__title">Išvalyti visus duomenis</h3>
+            <button type="button" class="modal__close" onclick="closeResetModal()" aria-label="Uždaryti">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
             </button>
+        </div>
+        <form action="{{ route('settings.reset') }}" method="POST">
+            @csrf
+            <div class="modal__body">
+                <div class="form-group">
+                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 14px; color: var(--text-dark);">
+                        <input type="checkbox" name="confirm_reset" value="1" {{ old('confirm_reset') ? 'checked' : '' }} style="margin-top: 3px;">
+                        Suprantu, kad duomenys bus negrįžtamai ištrinti
+                    </label>
+                    @error('confirm_reset')
+                        <div style="color: var(--danger, #dc2626); font-size: 13px; margin-top: 6px;">{{ $message }}</div>
+                    @enderror
+                </div>
+                <div class="form-group">
+                    <label for="reset_password" class="form-label">Humis slaptažodis</label>
+                    <input type="password" name="reset_password" id="reset_password" autocomplete="current-password" class="form-input" required>
+                    @error('reset_password')
+                        <div style="color: var(--danger, #dc2626); font-size: 13px; margin-top: 6px;">{{ $message }}</div>
+                    @enderror
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button type="button" class="btn btn--secondary" onclick="closeResetModal()">Atšaukti</button>
+                <button type="submit" class="btn btn--danger">Išvalyti visus duomenis</button>
+            </div>
         </form>
     </div>
 </div>
@@ -156,6 +173,102 @@
 .toggle input:checked + .toggle__slider::before {
     transform: translateX(22px);
 }
+
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+.modal__content {
+    position: relative;
+    background: var(--bg-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    max-width: 460px;
+    width: 100%;
+    margin: 20px;
+}
+.modal__header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.modal__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin: 0;
+}
+.modal__close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+.modal__close:hover {
+    background: var(--bg-body);
+    color: var(--text-primary);
+}
+.modal__body {
+    padding: 24px;
+}
+.modal__body .form-group:last-child {
+    margin-bottom: 0;
+}
+.modal__footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
 </style>
 @endpush
+
+@if(config('app.humis_password'))
+@push('scripts')
+<script>
+(function () {
+    const modal = document.getElementById('reset-modal');
+    if (!modal) return;
+
+    window.openResetModal = function () {
+        modal.style.display = 'flex';
+        const pwd = document.getElementById('reset_password');
+        if (pwd) setTimeout(function () { pwd.focus(); }, 0);
+    };
+    window.closeResetModal = function () {
+        modal.style.display = 'none';
+    };
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && modal.style.display === 'flex') {
+            window.closeResetModal();
+        }
+    });
+
+    @if($errors->has('confirm_reset') || $errors->has('reset_password'))
+        window.openResetModal();
+    @endif
+})();
+</script>
+@endpush
+@endif
+
 @endsection
