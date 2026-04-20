@@ -4,10 +4,7 @@ set -e
 echo "=================================================="
 echo "  Humis — Railway start"
 echo "=================================================="
-echo "DB_HOST=${DB_HOST}"
-echo "DB_PORT=${DB_PORT}"
-echo "DB_DATABASE=${DB_DATABASE}"
-echo "DB_USERNAME=${DB_USERNAME}"
+echo "DB_URL is set: $([ -n "$DB_URL" ] && echo 'taip' || echo 'NE !!!')"
 echo "APP_URL=${APP_URL}"
 echo "PORT=${PORT:-8000}"
 echo "--------------------------------------------------"
@@ -15,7 +12,20 @@ echo "--------------------------------------------------"
 echo "--> Laukiama MySQL (max 60s)..."
 MAX_TRIES=30
 TRIES=0
-until php -r "try { new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD')); exit(0); } catch (Exception \$e) { fwrite(STDERR, \$e->getMessage() . PHP_EOL); exit(1); }"; do
+until php -r '
+$url = getenv("DB_URL");
+if (!$url) { fwrite(STDERR, "DB_URL env var missing\n"); exit(1); }
+$p = parse_url($url);
+if (!$p || !isset($p["host"])) { fwrite(STDERR, "DB_URL unparseable: $url\n"); exit(1); }
+$dsn = sprintf("mysql:host=%s;port=%d;dbname=%s", $p["host"], $p["port"] ?? 3306, ltrim($p["path"] ?? "", "/"));
+try {
+    new PDO($dsn, $p["user"] ?? null, $p["pass"] ?? null);
+    exit(0);
+} catch (Exception $e) {
+    fwrite(STDERR, $e->getMessage() . "\n");
+    exit(1);
+}
+'; do
     TRIES=$((TRIES+1))
     if [ $TRIES -ge $MAX_TRIES ]; then
         echo "!! DB neprieinama po ${MAX_TRIES} bandymų, nutraukiama"
