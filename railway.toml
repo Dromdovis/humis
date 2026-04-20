@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "bash railway-start.sh"
+restartPolicyType = "ON_FAILURE"
+healthcheckPath = "/prisijungti"
+healthcheckTimeout = 60
