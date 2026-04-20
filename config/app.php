@@ -123,6 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
-    'humis_password' => env('HUMIS_PASSWORD', 'humis2026'),
+    'humis_password' => env('HUMIS_PASSWORD'),
 
 ];

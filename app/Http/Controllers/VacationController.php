@@ -33,7 +33,7 @@ class VacationController extends Controller
                       ->select('vacations.*');
                 break;
             case 'duration':
-                $query->orderByRaw("JULIANDAY(end_date) - JULIANDAY(start_date) {$sortDir}");
+                $query->orderByRaw("DATEDIFF(end_date, start_date) {$sortDir}");
                 break;
             case 'status':
                 $query->orderBy('tasks_reassigned', $sortDir);
