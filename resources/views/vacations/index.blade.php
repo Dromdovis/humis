@@ -11,84 +11,39 @@
     </button>
 @endsection
 
-@php
-    $sortBy = $sortBy ?? 'start_date';
-    $sortDir = $sortDir ?? 'desc';
-@endphp
-
 @section('content')
 <div class="card">
     <div class="card__header">
         <h2 class="card__title">Visos atostogos</h2>
     </div>
     @if($vacations->count() > 0)
-        <table class="table">
+        <table class="table" data-sortable data-sort-default="start_date" data-sort-default-dir="desc">
             <thead>
                 <tr>
                     <th>
-                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'name', 'dir' => ($sortBy === 'name' && $sortDir === 'asc') ? 'desc' : 'asc']) }}" class="sort-link">
+                        <button type="button" class="sortable__btn" data-sort-col="name" data-sort-type="text">
                             Darbuotojas
-                            @if($sortBy === 'name')
-                                <svg class="sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    @if($sortDir === 'asc')
-                                        <path d="M7 15l5 5 5-5"/>
-                                    @else
-                                        <path d="M7 9l5-5 5 5"/>
-                                    @endif
-                                </svg>
-                            @else
-                                <svg class="sort-icon sort-icon--inactive" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
-                            @endif
-                        </a>
+                            @include('components.sort-arrows')
+                        </button>
                     </th>
                     <th>
-                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'start_date', 'dir' => ($sortBy === 'start_date' && $sortDir === 'asc') ? 'desc' : 'asc']) }}" class="sort-link">
+                        <button type="button" class="sortable__btn" data-sort-col="start_date" data-sort-type="date">
                             Datos
-                            @if($sortBy === 'start_date')
-                                <svg class="sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    @if($sortDir === 'asc')
-                                        <path d="M7 15l5 5 5-5"/>
-                                    @else
-                                        <path d="M7 9l5-5 5 5"/>
-                                    @endif
-                                </svg>
-                            @else
-                                <svg class="sort-icon sort-icon--inactive" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
-                            @endif
-                        </a>
+                            @include('components.sort-arrows')
+                        </button>
                     </th>
                     <th>
-                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'duration', 'dir' => ($sortBy === 'duration' && $sortDir === 'asc') ? 'desc' : 'asc']) }}" class="sort-link">
+                        <button type="button" class="sortable__btn" data-sort-col="duration" data-sort-type="number">
                             Trukmė
-                            @if($sortBy === 'duration')
-                                <svg class="sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    @if($sortDir === 'asc')
-                                        <path d="M7 15l5 5 5-5"/>
-                                    @else
-                                        <path d="M7 9l5-5 5 5"/>
-                                    @endif
-                                </svg>
-                            @else
-                                <svg class="sort-icon sort-icon--inactive" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
-                            @endif
-                        </a>
+                            @include('components.sort-arrows')
+                        </button>
                     </th>
                     <th>Pavaduotojai</th>
                     <th>
-                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'status', 'dir' => ($sortBy === 'status' && $sortDir === 'asc') ? 'desc' : 'asc']) }}" class="sort-link">
+                        <button type="button" class="sortable__btn" data-sort-col="status" data-sort-type="number">
                             Būsena
-                            @if($sortBy === 'status')
-                                <svg class="sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    @if($sortDir === 'asc')
-                                        <path d="M7 15l5 5 5-5"/>
-                                    @else
-                                        <path d="M7 9l5-5 5 5"/>
-                                    @endif
-                                </svg>
-                            @else
-                                <svg class="sort-icon sort-icon--inactive" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
-                            @endif
-                        </a>
+                            @include('components.sort-arrows')
+                        </button>
                     </th>
                     <th style="width: 180px;"></th>
                 </tr>
@@ -108,7 +63,15 @@
                         }
                     }
                 @endphp
-                <tr>
+                @php
+                    $statusOrder = $vacation->tasks_reassigned ? 2 : ($vacation->scheduled_at ? 1 : 0);
+                @endphp
+                <tr
+                    data-sort-name="{{ e($vacation->employee->name ?? '') }}"
+                    data-sort-start_date="{{ $vacation->start_date->format('Y-m-d') }}"
+                    data-sort-duration="{{ (int) $vacation->duration_days }}"
+                    data-sort-status="{{ $statusOrder }}"
+                >
                     <td>
                         <div class="user-row">
                             <div class="avatar avatar--sm" style="background: {{ $vacation->employee->color ?? '#10b981' }}">
@@ -280,28 +243,6 @@
 
 @push('styles')
 <style>
-    .sort-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        color: inherit;
-        text-decoration: none;
-        font-weight: 600;
-        transition: color 0.15s;
-    }
-    .sort-link:hover {
-        color: var(--color-primary);
-    }
-    .sort-icon {
-        opacity: 0.7;
-    }
-    .sort-icon--inactive {
-        opacity: 0.3;
-    }
-    .sort-link:hover .sort-icon--inactive {
-        opacity: 0.5;
-    }
-
     .substitutes-list {
         display: flex;
         align-items: center;

@@ -12,21 +12,13 @@ class EmployeeController extends Controller
 {
     public function index()
     {
-        $sortBy = request('sort', 'name');
-        $sortDir = request('dir', 'asc') === 'desc' ? 'desc' : 'asc';
+        // Visada ta pati DB užklausa — rūšiavimas vyksta naršyklėje (be pilno perkrovimo į serverį).
+        $employees = Employee::with('skills')
+            ->where('is_active', true)
+            ->orderBy('name', 'asc')
+            ->get();
 
-        $query = Employee::with('skills')->where('is_active', true);
-
-        if ($sortBy === 'tasks') {
-            $query->orderByRaw('cached_active_tasks_count IS NULL')
-                ->orderBy('cached_active_tasks_count', $sortDir);
-        } else {
-            $query->orderBy('name', $sortDir);
-        }
-
-        $employees = $query->get();
-
-        return view('employees.index', compact('employees', 'sortBy', 'sortDir'));
+        return view('employees.index', compact('employees'));
     }
 
     public function show(Employee $employee)

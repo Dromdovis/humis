@@ -15,47 +15,33 @@
 @endsection
 
 @section('content')
-@php
-    $sortBy = $sortBy ?? 'name';
-    $sortDir = $sortDir ?? 'asc';
-    $nextNameDir = ($sortBy === 'name' && $sortDir === 'asc') ? 'desc' : 'asc';
-    $nextTasksDir = ($sortBy === 'tasks' && $sortDir === 'asc') ? 'desc' : 'asc';
-@endphp
 <div class="card">
     <div class="card__header">
         <h2 class="card__title">Visi darbuotojai ({{ $employees->count() }})</h2>
     </div>
     @if($employees->count() > 0)
-        <table class="table">
+        <table class="table" data-sortable data-sort-default="name" data-sort-default-dir="asc">
             <thead>
                 <tr>
                     <th>
-                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'name', 'dir' => $nextNameDir]) }}" class="sort-link">
+                        <button type="button" class="sortable__btn" data-sort-col="name" data-sort-type="text">
                             Darbuotojas
-                            @if($sortBy === 'name')
-                                <svg class="sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    @if($sortDir === 'asc')<path d="M7 15l5 5 5-5"/>@else<path d="M7 9l5-5 5 5"/>@endif
-                                </svg>
-                            @endif
-                        </a>
+                            @include('components.sort-arrows')
+                        </button>
                     </th>
                     <th>Įgūdžiai</th>
                     <th>
-                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'tasks', 'dir' => $nextTasksDir]) }}" class="sort-link">
+                        <button type="button" class="sortable__btn" data-sort-col="tasks" data-sort-type="number">
                             Aktyvios užduotys
-                            @if($sortBy === 'tasks')
-                                <svg class="sort-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    @if($sortDir === 'asc')<path d="M7 15l5 5 5-5"/>@else<path d="M7 9l5-5 5 5"/>@endif
-                                </svg>
-                            @endif
-                        </a>
+                            @include('components.sort-arrows')
+                        </button>
                     </th>
                     <th style="width: 100px;"></th>
                 </tr>
             </thead>
             <tbody>
                 @foreach($employees as $employee)
-                <tr>
+                <tr data-sort-name="{{ e($employee->name) }}" data-sort-tasks="{{ $employee->cached_active_tasks_count !== null ? $employee->cached_active_tasks_count : '' }}">
                     <td>
                         <div class="user-row">
                             <div class="avatar" style="background: {{ $employee->color ?? '#6366f1' }}">
@@ -121,16 +107,6 @@
 
 @push('styles')
 <style>
-.sort-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: inherit;
-    text-decoration: none;
-    font-weight: 600;
-}
-.sort-link:hover { color: var(--color-primary); }
-.sort-icon { opacity: 0.75; }
 .employee-skill {
     display: inline-flex;
     align-items: center;

@@ -377,6 +377,26 @@
             border-bottom: 1px solid var(--border-color);
         }
 
+        .sortable__btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font: inherit;
+            font-weight: 500;
+            font-size: inherit;
+            letter-spacing: inherit;
+            text-transform: inherit;
+            color: inherit;
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            text-align: left;
+            user-select: none;
+        }
+        .sortable__btn:hover { color: var(--text-dark); }
+        .sort-icon { opacity: 0.75; }
+
         .table td {
             padding: 16px;
             border-bottom: 1px solid var(--border-light);
@@ -1163,6 +1183,99 @@
                 disableMobile: true,
             });
         });
+    })();
+    </script>
+
+    <script>
+    (function () {
+        function compare(a, b, type) {
+            if (type === 'number' || type === 'date') {
+                var na = a === '' || a === null || a === undefined ? null : (type === 'date' ? Date.parse(a) : Number(a));
+                var nb = b === '' || b === null || b === undefined ? null : (type === 'date' ? Date.parse(b) : Number(b));
+                if (na === null && nb === null) return 0;
+                if (na === null) return 1;
+                if (nb === null) return -1;
+                if (!Number.isFinite(na)) na = 0;
+                if (!Number.isFinite(nb)) nb = 0;
+                return na - nb;
+            }
+            var sa = (a === null || a === undefined ? '' : String(a)).toLowerCase();
+            var sb = (b === null || b === undefined ? '' : String(b)).toLowerCase();
+            return sa.localeCompare(sb, 'lt', { sensitivity: 'base', numeric: true });
+        }
+
+        function initTable(table) {
+            var tbody = table.tBodies[0];
+            if (!tbody) return;
+            var buttons = table.querySelectorAll('[data-sort-col]');
+            if (buttons.length === 0) return;
+
+            var defaultCol = table.dataset.sortDefault || buttons[0].dataset.sortCol;
+            var defaultDir = table.dataset.sortDefaultDir === 'desc' ? 'desc' : 'asc';
+            var params = new URLSearchParams(window.location.search);
+            var sort = params.get('sort');
+            var dir = params.get('dir') === 'desc' ? 'desc' : 'asc';
+            var available = Array.prototype.map.call(buttons, function (b) { return b.dataset.sortCol; });
+            if (!sort || available.indexOf(sort) === -1) {
+                sort = defaultCol;
+                dir = defaultDir;
+            }
+
+            var typeByCol = {};
+            Array.prototype.forEach.call(buttons, function (b) {
+                typeByCol[b.dataset.sortCol] = b.dataset.sortType || 'text';
+            });
+
+            function applySort() {
+                var rows = Array.prototype.slice.call(tbody.querySelectorAll(':scope > tr'));
+                rows.sort(function (ra, rb) {
+                    var c = compare(ra.dataset['sort' + cap(sort)], rb.dataset['sort' + cap(sort)], typeByCol[sort]);
+                    return dir === 'asc' ? c : -c;
+                });
+                rows.forEach(function (r) { tbody.appendChild(r); });
+            }
+
+            function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+            function updateIcons() {
+                Array.prototype.forEach.call(buttons, function (btn) {
+                    btn.querySelectorAll('[data-arrow]').forEach(function (el) { el.hidden = true; });
+                    if (btn.dataset.sortCol === sort) {
+                        var el = btn.querySelector('[data-arrow="' + dir + '"]');
+                        if (el) el.hidden = false;
+                    }
+                });
+            }
+
+            function syncUrl() {
+                try {
+                    var url = new URL(window.location.href);
+                    url.searchParams.set('sort', sort);
+                    url.searchParams.set('dir', dir);
+                    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+                } catch (e) { /* noop */ }
+            }
+
+            Array.prototype.forEach.call(buttons, function (btn) {
+                btn.addEventListener('click', function () {
+                    var col = btn.dataset.sortCol;
+                    if (col === sort) {
+                        dir = dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        sort = col;
+                        dir = 'asc';
+                    }
+                    applySort();
+                    updateIcons();
+                    syncUrl();
+                });
+            });
+
+            applySort();
+            updateIcons();
+        }
+
+        document.querySelectorAll('table[data-sortable]').forEach(initTable);
     })();
     </script>
 

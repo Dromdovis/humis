@@ -15,38 +15,14 @@ class VacationController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Vacation::with(['employee', 'defaultSubstitute', 'taskAssignments.substitute']);
-
-        $sortBy = $request->get('sort', 'start_date');
-        $sortDir = $request->get('dir', 'desc');
-
-        $allowedSorts = ['name', 'start_date', 'duration', 'status'];
-        $allowedDirs = ['asc', 'desc'];
-        
-        if (!in_array($sortBy, $allowedSorts)) $sortBy = 'start_date';
-        if (!in_array($sortDir, $allowedDirs)) $sortDir = 'desc';
-
-        switch ($sortBy) {
-            case 'name':
-                $query->join('employees', 'vacations.employee_id', '=', 'employees.id')
-                      ->orderBy('employees.name', $sortDir)
-                      ->select('vacations.*');
-                break;
-            case 'duration':
-                $query->orderByRaw("DATEDIFF(end_date, start_date) {$sortDir}");
-                break;
-            case 'status':
-                $query->orderBy('tasks_reassigned', $sortDir);
-                break;
-            default:
-                $query->orderBy($sortBy, $sortDir);
-        }
-
-        $vacations = $query->paginate(20)->withQueryString();
+        $vacations = Vacation::with(['employee', 'defaultSubstitute', 'taskAssignments.substitute'])
+            ->orderByDesc('start_date')
+            ->paginate(100)
+            ->withQueryString();
 
         $employees = Employee::where('is_active', true)->orderBy('name')->get();
 
-        return view('vacations.index', compact('vacations', 'sortBy', 'sortDir', 'employees'));
+        return view('vacations.index', compact('vacations', 'employees'));
     }
 
     public function store(Request $request)
