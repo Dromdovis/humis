@@ -24,9 +24,7 @@
             <thead>
                 <tr>
                     <th>Projektas</th>
-                    <th>Klientas</th>
                     <th>Tech Stack</th>
-                    <th>Komanda</th>
                     <th style="width: 120px;"></th>
                 </tr>
             </thead>
@@ -39,7 +37,6 @@
                             <div style="font-size: 13px; color: var(--text-secondary);">{{ Str::limit($project->description, 50) }}</div>
                         @endif
                     </td>
-                    <td style="color: var(--text-secondary);">{{ $project->client_name ?? '—' }}</td>
                     <td>
                         @if($project->skills->count() > 0)
                             <div style="display: flex; flex-wrap: wrap; gap: 4px;">
@@ -52,24 +49,6 @@
                             </div>
                         @else
                             <span style="color: var(--text-muted); font-size: 13px;">Nenustatyta</span>
-                        @endif
-                    </td>
-                    <td>
-                        @if($project->employees->count() > 0)
-                            <div style="display: flex;">
-                                @foreach($project->employees->take(3) as $employee)
-                                    <div class="avatar avatar--sm" style="background: {{ $employee->color ?? '#10b981' }}; margin-left: -6px; border: 2px solid white;" title="{{ $employee->name }}">
-                                        {{ substr($employee->name, 0, 1) }}
-                                    </div>
-                                @endforeach
-                                @if($project->employees->count() > 3)
-                                    <div class="avatar avatar--sm" style="background: var(--bg-body); color: var(--text-secondary); margin-left: -6px; border: 2px solid white; font-size: 10px;">
-                                        +{{ $project->employees->count() - 3 }}
-                                    </div>
-                                @endif
-                            </div>
-                        @else
-                            <span style="color: var(--text-muted);">—</span>
                         @endif
                     </td>
                     <td>

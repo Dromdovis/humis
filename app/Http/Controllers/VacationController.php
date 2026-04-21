@@ -119,6 +119,7 @@ class VacationController extends Controller
 
         $recommendationEnabled = Setting::get('recommendation_engine', 'disabled') === 'enabled';
         $taskRecommendations = [];
+        $baseWorkloadHours = [];
 
         if ($recommendationEnabled) {
             $defaultHoursPerTask = 2;
@@ -146,6 +147,8 @@ class VacationController extends Controller
 
             $recommendationService->setClickupWorkloadHours($clickupWorkloadHours);
 
+            $baseWorkloadHours = $recommendationService->getBaseWorkloadHours($employees, $vacation->id);
+
             foreach ($tasks as $task) {
                 $taskRecommendations[$task['id']] = $recommendationService->getRecommendationsForDropdown(
                     $task,
@@ -156,7 +159,14 @@ class VacationController extends Controller
             }
         }
 
-        return view('vacations.assign', compact('vacation', 'tasks', 'employees', 'taskRecommendations', 'recommendationEnabled'));
+        return view('vacations.assign', compact(
+            'vacation',
+            'tasks',
+            'employees',
+            'taskRecommendations',
+            'recommendationEnabled',
+            'baseWorkloadHours'
+        ));
     }
 
     /**

@@ -11,7 +11,7 @@ class ProjectController extends Controller
 {
     public function index()
     {
-        $projects = Project::with(['skills', 'employees'])
+        $projects = Project::with(['skills'])
             ->orderBy('name')
             ->get();
 

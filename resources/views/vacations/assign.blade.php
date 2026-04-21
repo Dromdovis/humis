@@ -70,6 +70,8 @@
                         @endphp
                         <tr class="{{ $alreadyReassigned ? 'row--reassigned' : '' }}"
                             title="{{ $alreadyReassigned ? 'Ši užduotis jau turi papildomą vykdytoją' : '' }}"
+                            data-task-id="{{ $task['id'] }}"
+                            data-task-hours="{{ $timeEstimate ?? 0 }}"
                         >
                             <td>
                                 <input type="hidden" name="assignments[{{ $index }}][clickup_task_id]" value="{{ $task['id'] }}">
@@ -808,7 +810,10 @@ function toggleExclude(checkbox) {
         
         if (checkbox.checked) {
             const hiddenInput = ssWrapper.querySelector('input[type="hidden"]');
-            if (hiddenInput) hiddenInput.value = '';
+            if (hiddenInput) {
+                hiddenInput.value = '';
+                hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
             const valueDisplay = ssWrapper.querySelector('.searchable-select__value');
             if (valueDisplay) {
                 const placeholder = ssWrapper.querySelector('.searchable-select__trigger').dataset.placeholder || '-- Pasirinkti pavaduotoją --';
@@ -820,6 +825,171 @@ function toggleExclude(checkbox) {
         }
     }
 }
+
+/* =========================================================================
+ * DINAMINIS UŽIMTUMO PERSKAIČIAVIMAS
+ * Priskyrus užduotį darbuotojui einamojoje sesijoje, jo "Užimtumas" balas
+ * iškart sumažėja kitoms užduotims (be page reload).
+ * ========================================================================= */
+@if($recommendationEnabled)
+(function () {
+    const BASE_WORKLOAD_HOURS = @json((object) $baseWorkloadHours);
+    const WORKLOAD_MAX = 30;
+    const DEFAULT_TASK_HOURS = 2;
+
+    // { taskId: hours } — numatomas valandų kiekis užduočiai
+    const taskHours = {};
+    // { taskId: boolean } — ar užduotis pažymėta kaip "praleisti"
+    const excludedTasks = {};
+    // { taskId: employeeId | '' } — kas priskirtas užduočiai dabartinėje sesijoje
+    const sessionAssignments = {};
+    // { taskId: [recObj, ...] } — mutuoti rekomendacijų objektai
+    const taskRecs = {};
+
+    function fmtHours(h) {
+        if (h === 0) return '0';
+        return Number.isInteger(h) ? String(h) : h.toFixed(1).replace(/\.0$/, '');
+    }
+
+    function computeWorkload(totalHours) {
+        const h = Math.max(0, totalHours);
+        if (h === 0)   return { score: WORKLOAD_MAX,                details: 'Laisvas (0h krūvis)' };
+        if (h <= 20)   return { score: Math.round(WORKLOAD_MAX * 0.85), details: `Mažas krūvis (${fmtHours(h)}h)` };
+        if (h <= 40)   return { score: Math.round(WORKLOAD_MAX * 0.7),  details: `Vidutinis krūvis (${fmtHours(h)}h)` };
+        if (h <= 60)   return { score: Math.round(WORKLOAD_MAX * 0.5),  details: `Didelis krūvis (${fmtHours(h)}h)` };
+        if (h <= 80)   return { score: Math.round(WORKLOAD_MAX * 0.3),  details: `Labai didelis krūvis (${fmtHours(h)}h)` };
+        return         { score: Math.round(WORKLOAD_MAX * 0.1),  details: `Perkrautas (${fmtHours(h)}h)` };
+    }
+
+    function employeeTotalHours(empId) {
+        let sum = parseFloat(BASE_WORKLOAD_HOURS[empId]) || 0;
+        for (const tId in sessionAssignments) {
+            if (String(sessionAssignments[tId]) === String(empId) && !excludedTasks[tId]) {
+                sum += parseFloat(taskHours[tId]) || 0;
+            }
+        }
+        return sum;
+    }
+
+    function badgeFor(score) {
+        if (score >= 80) return { text: 'Puikiai tinka', class: 'badge--success' };
+        if (score >= 60) return { text: 'Gerai tinka',   class: 'badge--info' };
+        if (score >= 40) return { text: 'Tinka',         class: 'badge--warning' };
+        return             { text: 'Mažai tinka',        class: 'badge--neutral' };
+    }
+
+    function recomputeAndRender() {
+        for (const taskId in taskRecs) {
+            const recs = taskRecs[taskId];
+
+            recs.forEach(rec => {
+                const hours = employeeTotalHours(rec.id);
+                const w = computeWorkload(hours);
+                rec.breakdown.workload.score = w.score;
+                rec.breakdown.workload.details = w.details;
+
+                const total =
+                    (rec.breakdown.skills?.score || 0) +
+                    w.score +
+                    (rec.breakdown.availability?.score || 0) +
+                    (rec.breakdown.project?.score || 0);
+
+                rec.score = Math.max(0, Math.min(100, Math.round(total)));
+                rec.badge = badgeFor(rec.score);
+            });
+
+            recs.sort((a, b) => b.score - a.score);
+            renderTask(taskId, recs);
+        }
+    }
+
+    function renderTask(taskId, recs) {
+        const infoBtn = document.getElementById('info-btn-' + taskId);
+        if (!infoBtn) return;
+
+        const wrapper = infoBtn.closest('.recommendation-select-wrapper');
+        if (!wrapper) return;
+        const ss = wrapper.querySelector('.searchable-select');
+        if (!ss) return;
+
+        const hidden = ss.querySelector('input[type="hidden"]');
+        const optionsUl = ss.querySelector('.searchable-select__options');
+        const valueEl = ss.querySelector('.searchable-select__value');
+
+        const liByEmpId = {};
+        ss.querySelectorAll('.searchable-select__option').forEach(li => {
+            liByEmpId[li.dataset.value] = li;
+        });
+
+        recs.forEach(rec => {
+            const li = liByEmpId[String(rec.id)];
+            if (!li) return;
+            const newLabel = rec.name + ' — ' + rec.score + '%';
+            li.dataset.label = newLabel;
+            const labelSpan = li.querySelector('.searchable-select__option-label');
+            if (labelSpan) labelSpan.textContent = newLabel;
+            optionsUl.appendChild(li);
+        });
+
+        const selectedId = hidden && hidden.value ? hidden.value : '';
+        if (selectedId && valueEl) {
+            const sel = recs.find(r => String(r.id) === String(selectedId));
+            if (sel) {
+                const avatar = valueEl.querySelector('.searchable-select__avatar');
+                let avatarHtml = '';
+                if (avatar) {
+                    avatarHtml = `<span class="searchable-select__avatar" style="background: ${sel.color || '#6366f1'}">${sel.name.charAt(0)}</span>`;
+                }
+                valueEl.innerHTML = avatarHtml + (sel.name + ' — ' + sel.score + '%');
+            }
+        }
+
+        infoBtn.dataset.recommendations = JSON.stringify(recs);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('tr[data-task-id]').forEach(row => {
+            const taskId = row.dataset.taskId;
+            if (!taskId) return;
+
+            const parsedHours = parseFloat(row.dataset.taskHours);
+            taskHours[taskId] = parsedHours > 0 ? parsedHours : DEFAULT_TASK_HOURS;
+
+            const excludeCb = row.querySelector('input[type="checkbox"][name*="[is_excluded]"]');
+            excludedTasks[taskId] = excludeCb ? excludeCb.checked : false;
+
+            const ss = row.querySelector('.searchable-select');
+            const hidden = ss ? ss.querySelector('input[type="hidden"]') : null;
+            sessionAssignments[taskId] = hidden && hidden.value ? hidden.value : '';
+
+            const infoBtn = document.getElementById('info-btn-' + taskId);
+            if (infoBtn) {
+                try {
+                    taskRecs[taskId] = JSON.parse(infoBtn.dataset.recommendations || '[]');
+                } catch (e) {
+                    taskRecs[taskId] = [];
+                }
+            }
+
+            if (hidden) {
+                hidden.addEventListener('change', function () {
+                    sessionAssignments[taskId] = this.value || '';
+                    recomputeAndRender();
+                });
+            }
+
+            if (excludeCb) {
+                excludeCb.addEventListener('change', function () {
+                    excludedTasks[taskId] = this.checked;
+                    recomputeAndRender();
+                });
+            }
+        });
+
+        recomputeAndRender();
+    });
+})();
+@endif
 
 </script>
 @endsection

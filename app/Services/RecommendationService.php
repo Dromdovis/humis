@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Employee;
 use App\Models\Project;
 use App\Models\Vacation;
+use App\Models\VacationTaskAssignment;
 use Illuminate\Support\Collection;
 
 class RecommendationService
@@ -279,6 +280,50 @@ class RecommendationService
         }
 
         return ['score' => 0, 'details' => 'Naujas projektas'];
+    }
+
+    /**
+     * Gauti bazinį darbo krūvį (valandomis) kiekvienam darbuotojui.
+     * Grąžina [employee_id => hours], kur hours = ClickUp užduočių valandos +
+     * kitų (nebaigtų perskirstyti) atostogų pavadavimo valandos.
+     *
+     * Dabartinė atostoga (jei nurodyta) NĖRA įtraukiama, kad JS pusėje
+     * būtų galima pridėti "session" pasirinkimus be dubliavimo.
+     */
+    public function getBaseWorkloadHours(Collection $employees, ?int $excludeVacationId = null): array
+    {
+        $result = [];
+
+        $employeeIds = $employees->pluck('id')->all();
+
+        $substitutingHours = [];
+        if (!empty($employeeIds)) {
+            $query = VacationTaskAssignment::query()
+                ->selectRaw('substitute_id, COALESCE(SUM(time_estimate_hours), 0) as total_hours')
+                ->whereIn('substitute_id', $employeeIds)
+                ->whereHas('vacation', function ($q) use ($excludeVacationId) {
+                    $q->where('tasks_reassigned', false)
+                      ->where('end_date', '>=', now());
+                    if ($excludeVacationId !== null) {
+                        $q->where('id', '!=', $excludeVacationId);
+                    }
+                })
+                ->groupBy('substitute_id')
+                ->pluck('total_hours', 'substitute_id');
+
+            $substitutingHours = $query->toArray();
+        }
+
+        foreach ($employees as $employee) {
+            $clickupHours = 0;
+            if ($employee->clickup_user_id && isset($this->clickupWorkloadHours[$employee->clickup_user_id])) {
+                $clickupHours = (float) $this->clickupWorkloadHours[$employee->clickup_user_id];
+            }
+            $subHours = (float) ($substitutingHours[$employee->id] ?? 0);
+            $result[$employee->id] = $clickupHours + $subHours;
+        }
+
+        return $result;
     }
 
     /**
